@@ -1,0 +1,32 @@
+# Waslni — dependency listing
+#
+# IMPORTANT: This is a Node.js / npm project, NOT a Python project.
+# The canonical, installable manifest is package.json (locked by package-lock.json).
+#
+#   Install everything with:   npm install
+#   (npm reads package.json — it does NOT read this file.)
+#
+# This requirements.txt is a flat, human-readable mirror of every dependency
+# and its exact pinned version, provided for convenience. Versions use the
+# `name==version` convention below purely for readability.
+
+# ---- Runtime dependencies -------------------------------------------------
+date-fns==4.1.0
+framer-motion==12.43.0
+lucide-react==0.511.0
+react==19.1.0
+react-dom==19.1.0
+react-router-dom==7.6.2
+zod==3.25.7
+zustand==5.0.5
+
+# ---- Dev dependencies (build / type-check tooling) ------------------------
+@types/node==22.15.29
+@types/react==19.1.6
+@types/react-dom==19.1.5
+@vitejs/plugin-react==4.5.0
+typescript==5.8.3
+vite==6.3.5
+
+# ---- Toolchain requirement ------------------------------------------------
+# Node.js >= 18 (Node 20 / 22 LTS recommended) and npm.

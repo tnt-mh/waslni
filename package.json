@@ -1,0 +1,31 @@
+{
+  "name": "waslni",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Waslni — Le covoiturage rendu facile. Carpooling platform for Algeria.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "date-fns": "4.1.0",
+    "framer-motion": "12.43.0",
+    "lucide-react": "0.511.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-router-dom": "7.6.2",
+    "zod": "3.25.7",
+    "zustand": "5.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.29",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.5",
+    "@vitejs/plugin-react": "4.5.0",
+    "typescript": "5.8.3",
+    "vite": "6.3.5"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "Waslni — Le covoiturage rendu facile",
+  "short_name": "Waslni",
+  "description": "Plateforme de covoiturage pour l'Algérie. Voyagez malin, partagez les frais.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F7FC",
+  "theme_color": "#000080",
+  "categories": ["travel", "navigation", "social"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
