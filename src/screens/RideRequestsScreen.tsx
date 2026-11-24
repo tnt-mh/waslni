@@ -41,17 +41,21 @@ export function RideRequestsScreen() {
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const submit = () => {
+  const submit = async () => {
     setError('');
     if (!to) return setError(t('home.destination'));
     if (from === to) return setError(t('home.sameCity'));
     const maxBudget = Number(budget);
     if (!Number.isFinite(maxBudget) || maxBudget < 0) return setError(t('publish.invalidPrice'));
-    const res = createRideRequest({ fromCityId: from, toCityId: to, date, timePreference: timePref, seats, maxBudget, womenOnly });
-    if (!res.ok) return setError(t(res.error));
-    setOpen(false);
-    setTab('mine');
-    toast(t('req.published'), 'success');
+    try {
+      const res = await createRideRequest({ fromCityId: from, toCityId: to, date, timePreference: timePref, seats, maxBudget, womenOnly });
+      if (!res.ok) return setError(t(res.error));
+      setOpen(false);
+      setTab('mine');
+      toast(t('req.published'), 'success');
+    } catch {
+      setError(t('common.error'));
+    }
   };
 
   const timeLabel = (key: string) => t(`req.time${key.charAt(0).toUpperCase()}${key.slice(1)}`);
@@ -100,11 +104,27 @@ export function RideRequestsScreen() {
                   )}
                   <div className="row gap-8">
                     {isMine && r.status === 'open' && (
-                      <Button variant="outline" size="sm" block onClick={() => { closeRideRequest(r.id); toast(t('req.closed'), 'success'); }}>{t('req.close')}</Button>
+                      <Button variant="outline" size="sm" block onClick={async () => {
+                        try {
+                          const res = await closeRideRequest(r.id);
+                          if (!res.ok) return toast(t(res.error), 'error');
+                          toast(t('req.closed'), 'success');
+                        } catch {
+                          toast(t('common.error'), 'error');
+                        }
+                      }}>{t('req.close')}</Button>
                     )}
                     {!isMine && me.mode === 'driver' && r.status === 'open' && (
                       <>
-                        <Button variant="secondary" size="sm" block onClick={() => { const c = ensureConversation(r.passengerId); if (c) navigate(`/chat/${c}`); }}>
+                        <Button variant="secondary" size="sm" block onClick={async () => {
+                          try {
+                            const c = await ensureConversation(r.passengerId);
+                            if (!c) return toast(t('common.error'), 'error');
+                            navigate(`/chat/${c}`);
+                          } catch {
+                            toast(t('common.error'), 'error');
+                          }
+                        }}>
                           <MessageCircle size={14} /> {t('req.contactPassenger')}
                         </Button>
                         <Button size="sm" block onClick={() => navigate(`/driver/publish?from=${r.fromCityId}&to=${r.toCityId}`)}>

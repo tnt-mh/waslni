@@ -11,17 +11,33 @@ import { Modal } from '../../components/feedback';
 import { useStore } from '../../lib/store';
 import { useI18n } from '../../i18n';
 import { isValidEmail } from '../../lib/utils';
+import { runtimeMode } from '../../lib/runtime';
 
 export function LoginScreen() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const login = useStore((s) => s.login);
+  const requestPasswordReset = useStore((s) => s.requestPasswordReset);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState('');
+
+  const sendReset = async () => {
+    setResetError('');
+    if (!isValidEmail(resetEmail)) return setResetError(t('auth.invalidEmail'));
+    setResetLoading(true);
+    const res = await requestPasswordReset(resetEmail);
+    setResetLoading(false);
+    if (!res.ok) return setResetError(t(res.error));
+    setResetSent(true);
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,18 +81,34 @@ export function LoginScreen() {
           <button className="btn ghost sm" onClick={() => setForgotOpen(true)}>{t('auth.forgot')}</button>
           <Link to="/phone" className="btn ghost sm"><Phone size={15} /> {t('auth.phoneLogin')}</Link>
         </div>
-        <div className="divider" />
-        <Button variant="secondary" block onClick={() => setDemoOpen(true)}><Sparkles size={16} /> {t('welcome.demoAccounts')}</Button>
+        {runtimeMode === 'demo' && (
+          <>
+            <div className="divider" />
+            <Button variant="secondary" block onClick={() => setDemoOpen(true)}><Sparkles size={16} /> {t('welcome.demoAccounts')}</Button>
+          </>
+        )}
         <p className="center small muted">
           {t('auth.noAccount')} <Link to="/signup" className="bold">{t('auth.signup')}</Link>
         </p>
-        <p className="tiny muted-2 center">{t('auth.localAuthNotice')}</p>
+        <p className="tiny muted-2 center">{t(runtimeMode === 'demo' ? 'auth.localAuthNotice' : 'auth.productionAuthNotice')}</p>
       </div>
       <DemoAccountsSheet open={demoOpen} onClose={() => setDemoOpen(false)} />
       <Modal open={forgotOpen} onClose={() => setForgotOpen(false)}>
         <h3 className="h3 mb-8">{t('auth.forgot')}</h3>
-        <p className="subtitle mb-16">{t('auth.forgotInfo')}</p>
-        <Button block onClick={() => setForgotOpen(false)}>{t('common.close')}</Button>
+        {resetSent ? (
+          <>
+            <p className="subtitle mb-16">{t('auth.resetSent')}</p>
+            <Button block onClick={() => { setForgotOpen(false); setResetSent(false); }}>{t('common.close')}</Button>
+          </>
+        ) : (
+          <>
+            <p className="subtitle mb-16">{t(runtimeMode === 'demo' ? 'auth.forgotInfo' : 'auth.forgotProductionInfo')}</p>
+            <Field label={t('auth.email')} error={resetError}>
+              <Input type="email" autoComplete="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} invalid={!!resetError} />
+            </Field>
+            <Button block loading={resetLoading} onClick={() => void sendReset()}>{t('auth.sendReset')}</Button>
+          </>
+        )}
       </Modal>
     </Screen>
   );

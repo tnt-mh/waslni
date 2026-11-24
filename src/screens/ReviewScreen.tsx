@@ -69,14 +69,18 @@ export function ReviewScreen() {
     );
   }
 
-  const submit = () => {
+  const submit = async () => {
     setError('');
     if (stars < 1) return setError(t('review.starsRequired'));
     const hasCategories = Object.values(categories).some((v) => v > 0);
-    const res = submitReview({ bookingId: booking.id, stars, categories: hasCategories ? categories : null, text });
-    if (!res.ok) return setError(t(res.error));
-    toast(t('review.submitted'), 'success');
-    navigate(-1);
+    try {
+      const res = await submitReview({ bookingId: booking.id, stars, categories: hasCategories ? categories : null, text });
+      if (!res.ok) return setError(t(res.error));
+      toast(t('review.submitted'), 'success');
+      navigate(-1);
+    } catch {
+      setError(t('common.error'));
+    }
   };
 
   return (

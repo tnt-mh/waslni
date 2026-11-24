@@ -1,17 +1,20 @@
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { Compass, LogOut } from 'lucide-react';
+import { CloudOff, Compass, LoaderCircle } from 'lucide-react';
 import { useStore, currentUser } from './lib/store';
+import { canStaff } from './lib/staff';
+import { runtimeConfigError, runtimeMode } from './lib/runtime';
 import { I18nProvider, useI18n } from './i18n';
 import { ToastProvider, Screen, EmptyState } from './components/feedback';
 import { AppShell } from './components/AppShell';
-import { Banner, Button } from './components/ui';
+import { Button } from './components/ui';
 import { WelcomeScreen } from './screens/WelcomeScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { LoginScreen } from './screens/auth/LoginScreen';
 import { SignupScreen } from './screens/auth/SignupScreen';
 import { PhoneScreen } from './screens/auth/PhoneScreen';
 import { ProfileSetupScreen } from './screens/auth/ProfileSetupScreen';
+import { ResetPasswordScreen } from './screens/auth/ResetPasswordScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { RideDetailScreen } from './screens/RideDetailScreen';
@@ -36,18 +39,35 @@ import { SosScreen } from './screens/SosScreen';
 import { ReportScreen } from './screens/ReportScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { AdminScreen } from './screens/AdminScreen';
+import { AccountAccessScreen } from './screens/AccountAccessScreen';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const user = useStore(currentUser);
-  const logout = useStore((s) => s.logout);
+  if (!user) return <Navigate to="/welcome" replace />;
+  return <>{children}</>;
+}
+
+function RequireActive({ children }: { children: ReactNode }) {
+  const user = useStore(currentUser);
+  if (!user) return <Navigate to="/welcome" replace />;
+  if (user.status === 'suspended' || user.restrictionStatus === 'banned' || user.restrictionStatus === 'timeout') {
+    return <Navigate to="/account/restrictions" replace />;
+  }
+  return <>{children}</>;
+}
+
+function RequireStaff({ children }: { children: ReactNode }) {
+  const user = useStore(currentUser);
   const { t } = useI18n();
   if (!user) return <Navigate to="/welcome" replace />;
-  if (user.status === 'suspended') {
+  if (user.status === 'suspended' || user.restrictionStatus === 'banned' || user.restrictionStatus === 'timeout') {
+    return <Navigate to="/account/restrictions" replace />;
+  }
+  if (!canStaff(user, 'view_admin')) {
     return (
       <Screen noNav>
-        <div className="screen-body col gap-16" style={{ paddingTop: 48 }}>
-          <Banner kind="error">{t('auth.suspended')}</Banner>
-          <Button block variant="outline" onClick={logout}><LogOut size={16} /> {t('auth.logout')}</Button>
+        <div className="screen-body" style={{ paddingTop: 48 }}>
+          <EmptyState icon={<Compass size={28} />} title={t('admin.roleGuard')} />
         </div>
       </Screen>
     );
@@ -84,9 +104,10 @@ function AppRoutes() {
       <Route path="/login" element={<LoginScreen />} />
       <Route path="/signup" element={<SignupScreen />} />
       <Route path="/phone" element={<PhoneScreen />} />
-      <Route path="/profile-setup" element={<RequireAuth><ProfileSetupScreen /></RequireAuth>} />
+      <Route path="/reset-password" element={<ResetPasswordScreen />} />
+      <Route path="/profile-setup" element={<RequireActive><ProfileSetupScreen /></RequireActive>} />
 
-      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+      <Route element={<RequireActive><AppShell /></RequireActive>}>
         <Route path="/" element={<HomeOrDashboard />} />
         <Route path="/driver" element={<Navigate to="/" replace />} />
         <Route path="/search" element={<SearchScreen />} />
@@ -103,16 +124,19 @@ function AppRoutes() {
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/integrations" element={<IntegrationsScreen />} />
         <Route path="/safety" element={<SafetyScreen />} />
-        <Route path="/admin" element={<AdminScreen />} />
+        <Route path="/admin" element={<RequireStaff><AdminScreen /></RequireStaff>} />
       </Route>
 
-      <Route path="/book/:id" element={<RequireAuth><BookScreen /></RequireAuth>} />
-      <Route path="/chat/:id" element={<RequireAuth><ConversationScreen /></RequireAuth>} />
-      <Route path="/driver/verification" element={<RequireAuth><VerificationScreen /></RequireAuth>} />
-      <Route path="/driver/publish" element={<RequireAuth><PublishRideScreen /></RequireAuth>} />
-      <Route path="/review/:bookingId" element={<RequireAuth><ReviewScreen /></RequireAuth>} />
-      <Route path="/report/:type/:id" element={<RequireAuth><ReportScreen /></RequireAuth>} />
-      <Route path="/sos" element={<RequireAuth><SosScreen /></RequireAuth>} />
+      <Route path="/account/restrictions" element={<RequireAuth><AccountAccessScreen view="restrictions" /></RequireAuth>} />
+      <Route path="/appeals" element={<RequireAuth><AccountAccessScreen view="appeals" /></RequireAuth>} />
+
+      <Route path="/book/:id" element={<RequireActive><BookScreen /></RequireActive>} />
+      <Route path="/chat/:id" element={<RequireActive><ConversationScreen /></RequireActive>} />
+      <Route path="/driver/verification" element={<RequireActive><VerificationScreen /></RequireActive>} />
+      <Route path="/driver/publish" element={<RequireActive><PublishRideScreen /></RequireActive>} />
+      <Route path="/review/:bookingId" element={<RequireActive><ReviewScreen /></RequireActive>} />
+      <Route path="/report/:type/:id" element={<RequireActive><ReportScreen /></RequireActive>} />
+      <Route path="/sos" element={<RequireActive><SosScreen /></RequireActive>} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -121,12 +145,42 @@ function AppRoutes() {
 
 export default function App() {
   const language = useStore((s) => s.language);
+  const initialize = useStore((s) => s.initialize);
+  const connectionStatus = useStore((s) => s.connectionStatus);
+  const connectionError = useStore((s) => s.connectionError);
+  const { t } = useI18n();
+
+  useEffect(() => {
+    void initialize();
+  }, [initialize]);
+
+  const blocked = runtimeConfigError || (runtimeMode === 'production' && connectionStatus === 'error' ? connectionError : null);
+
   return (
     <I18nProvider lang={language}>
       <ToastProvider>
         <HashRouter>
           <div className="app-frame">
-            <AppRoutes />
+            {blocked ? (
+              <Screen noNav>
+                <div className="screen-body col gap-16" style={{ paddingTop: 64 }}>
+                  <EmptyState
+                    icon={<CloudOff size={30} />}
+                    title={t('connection.title')}
+                    text={t(blocked)}
+                    action={<Button onClick={() => window.location.reload()}>{t('common.retry')}</Button>}
+                  />
+                </div>
+              </Screen>
+            ) : runtimeMode === 'production' && connectionStatus === 'loading' ? (
+              <Screen noNav>
+                <div className="screen-body row" style={{ paddingTop: 64, justifyContent: 'center' }}>
+                  <LoaderCircle className="spin" size={22} /> <span className="subtitle">{t('common.loading')}</span>
+                </div>
+              </Screen>
+            ) : (
+              <AppRoutes />
+            )}
           </div>
         </HashRouter>
       </ToastProvider>

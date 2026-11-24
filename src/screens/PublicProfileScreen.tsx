@@ -1,7 +1,7 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { Flag, Heart, MessageCircle, UserRound } from 'lucide-react';
-import { Screen, EmptyState } from '../components/feedback';
+import { Screen, EmptyState, useToast } from '../components/feedback';
 import { ScreenHeader } from '../components/AppShell';
 import { Button, SectionTitle } from '../components/ui';
 import { ProfileView } from '../components/ProfileView';
@@ -13,6 +13,7 @@ export function PublicProfileScreen() {
   const { t } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const me = useStore(currentUser)!;
   const user = useStore((s) => s.users.find((u) => u.id === id));
   const isSaved = useStore((s) => s.savedDrivers.some((d) => d.userId === me.id && d.driverId === id));
@@ -33,9 +34,23 @@ export function PublicProfileScreen() {
     return <Navigate to="/profile" replace />;
   }
 
-  const contact = () => {
-    const convId = ensureConversation(user.id);
-    if (convId) navigate(`/chat/${convId}`);
+  const contact = async () => {
+    try {
+      const convId = await ensureConversation(user.id);
+      if (!convId) return toast(t('common.error'), 'error');
+      navigate(`/chat/${convId}`);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
+  };
+
+  const toggleSaved = async () => {
+    try {
+      const res = await toggleSavedDriver(user.id);
+      if (!res.ok) toast(t(res.error), 'error');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -46,7 +61,7 @@ export function PublicProfileScreen() {
 
         <div className="row gap-8">
           <Button block onClick={contact}><MessageCircle size={16} /> {t('profile.contact')}</Button>
-          <Button variant={isSaved ? 'secondary' : 'outline'} onClick={() => toggleSavedDriver(user.id)} aria-label={isSaved ? t('ride.unsaveDriver') : t('ride.saveDriver')}>
+          <Button variant={isSaved ? 'secondary' : 'outline'} onClick={async () => { await toggleSaved(); }} aria-label={isSaved ? t('ride.unsaveDriver') : t('ride.saveDriver')}>
             <Heart size={17} fill={isSaved ? 'currentColor' : 'none'} />
           </Button>
           <Button variant="ghost" onClick={() => navigate(`/report/user/${user.id}`)} aria-label={t('msg.reportUser')}>

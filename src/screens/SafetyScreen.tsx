@@ -23,17 +23,30 @@ export function SafetyScreen() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
 
-  const save = () => {
+  const save = async () => {
     setError('');
     if (!name.trim()) return setError(t('common.required'));
     const normalized = normalizePhone(phone);
     if (!normalized) return setError(t('auth.invalidPhone'));
-    const res = addTrustedContact(name, normalized);
-    if (!res.ok) return setError(t(res.error));
-    toast(t('safety.contactAdded'), 'success');
-    setAddOpen(false);
-    setName('');
-    setPhone('');
+    try {
+      const res = await addTrustedContact(name, normalized);
+      if (!res.ok) return setError(t(res.error));
+      toast(t('safety.contactAdded'), 'success');
+      setAddOpen(false);
+      setName('');
+      setPhone('');
+    } catch {
+      setError(t('common.error'));
+    }
+  };
+
+  const remove = async (id: string) => {
+    try {
+      const res = await removeTrustedContact(id);
+      if (!res.ok) toast(t(res.error), 'error');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -68,7 +81,7 @@ export function SafetyScreen() {
                 end={
                   <span className="row gap-4">
                     <a className="icon-btn" href={`tel:${c.phone}`} aria-label={t('common.call')}><Phone size={17} /></a>
-                    <button className="icon-btn" aria-label={t('common.delete')} onClick={() => removeTrustedContact(c.id)}><Trash2 size={17} color="var(--error)" /></button>
+                    <button className="icon-btn" aria-label={t('common.delete')} onClick={async () => { await remove(c.id); }}><Trash2 size={17} color="var(--error)" /></button>
                   </span>
                 }
               />

@@ -31,8 +31,18 @@ export function ConversationScreen() {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (conv) markConversationRead(conv.id);
-  }, [conv, msgs.length, markConversationRead]);
+    if (!conv) return;
+    let active = true;
+    void (async () => {
+      try {
+        const res = await markConversationRead(conv.id);
+        if (active && !res.ok) toast(t(res.error), 'error');
+      } catch {
+        if (active) toast(t('common.error'), 'error');
+      }
+    })();
+    return () => { active = false; };
+  }, [conv, msgs.length, markConversationRead, toast]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -51,12 +61,16 @@ export function ConversationScreen() {
   const blockedByOther = !!conv.blockedBy && !blockedByMe;
   const canSend = !conv.blockedBy;
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const res = sendMessage(conv.id, trimmed);
-    if (!res.ok) return toast(t(res.error), 'error');
-    setDraft('');
+    try {
+      const res = await sendMessage(conv.id, trimmed);
+      if (!res.ok) return toast(t(res.error), 'error');
+      setDraft('');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -102,7 +116,14 @@ export function ConversationScreen() {
       {blockedByMe && (
         <div className="col gap-8" style={{ padding: '0 16px 8px' }}>
           <Banner kind="warning">{t('msg.blockedNotice')}</Banner>
-          <Button block size="sm" variant="outline" onClick={() => blockInConversation(conv.id, false)}>{t('msg.unblock')}</Button>
+          <Button block size="sm" variant="outline" onClick={async () => {
+            try {
+              const res = await blockInConversation(conv.id, false);
+              if (!res.ok) toast(t(res.error), 'error');
+            } catch {
+              toast(t('common.error'), 'error');
+            }
+          }}>{t('msg.unblock')}</Button>
         </div>
       )}
       {blockedByOther && <div style={{ padding: '0 16px 8px' }}><Banner kind="warning">{t('msg.blocked')}</Banner></div>}
@@ -110,14 +131,14 @@ export function ConversationScreen() {
       {canSend && (
         <div className="quick-replies">
           {(['msg.quick1', 'msg.quick2', 'msg.quick3', 'msg.quick4'] as const).map((k) => (
-            <button key={k} type="button" className="chip soft" onClick={() => send(t(k))}>{t(k)}</button>
+            <button key={k} type="button" className="chip soft" onClick={async () => { await send(t(k)); }}>{t(k)}</button>
           ))}
         </div>
       )}
 
       <form
         className="chat-composer"
-        onSubmit={(e) => { e.preventDefault(); send(draft); }}
+        onSubmit={async (e) => { e.preventDefault(); await send(draft); }}
       >
         <Input
           className="input grow"
@@ -135,7 +156,15 @@ export function ConversationScreen() {
       <ConfirmDialog
         open={blockOpen}
         onClose={() => setBlockOpen(false)}
-        onConfirm={() => { blockInConversation(conv.id, true); toast(t('report.blocked'), 'success'); }}
+        onConfirm={async () => {
+          try {
+            const res = await blockInConversation(conv.id, true);
+            if (!res.ok) return toast(t(res.error), 'error');
+            toast(t('report.blocked'), 'success');
+          } catch {
+            toast(t('common.error'), 'error');
+          }
+        }}
         title={t('report.block')}
         message={t('report.blockConfirm')}
         confirmLabel={t('report.block')}

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Car, Flag, Heart, Leaf, MapPin, MessageCircle, PiggyBank, Repeat, ShieldCheck, Users } from 'lucide-react';
-import { Screen, EmptyState } from '../components/feedback';
+import { Screen, EmptyState, useToast } from '../components/feedback';
 import { ScreenHeader } from '../components/AppShell';
 import { Avatar, Badge, Banner, Button, Card, SectionTitle, Stars } from '../components/ui';
 import { MapView } from '../components/MapView';
@@ -17,6 +17,7 @@ export function RideDetailScreen() {
   const { t, lang } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const ride = useStore((s) => s.rides.find((r) => r.id === id));
   const driver = useStore((s) => s.users.find((u) => u.id === ride?.driverId));
   const vehicle = useStore((s) => s.vehicles.find((v) => v.id === ride?.vehicleId));
@@ -55,9 +56,23 @@ export function RideDetailScreen() {
   const departed = new Date(ride.departureAt).getTime() <= Date.now();
   const canBook = ride.status === 'published' && !departed && available > 0 && !isMine && !myBooking;
 
-  const contact = () => {
-    const conv = ensureConversation(driver.id, ride.id, myBooking?.id ?? null);
-    if (conv) navigate(`/chat/${conv}`);
+  const contact = async () => {
+    try {
+      const conv = await ensureConversation(driver.id, ride.id, myBooking?.id ?? null);
+      if (!conv) return toast(t('common.error'), 'error');
+      navigate(`/chat/${conv}`);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
+  };
+
+  const changeSaved = async () => {
+    try {
+      const res = await toggleSaved(driver.id);
+      if (!res.ok) toast(t(res.error), 'error');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -119,7 +134,7 @@ export function RideDetailScreen() {
                 <VerificationBadges user={driver} compact />
               </span>
             </button>
-            <button className="icon-btn" aria-label={isSaved ? t('ride.unsaveDriver') : t('ride.saveDriver')} onClick={() => toggleSaved(driver.id)}>
+            <button className="icon-btn" aria-label={isSaved ? t('ride.unsaveDriver') : t('ride.saveDriver')} onClick={async () => { await changeSaved(); }}>
               <Heart size={20} fill={isSaved ? 'var(--error)' : 'none'} color={isSaved ? 'var(--error)' : 'var(--text-2)'} />
             </button>
           </div>

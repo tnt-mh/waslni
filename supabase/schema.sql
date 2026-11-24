@@ -3,7 +3,12 @@
 -- Carpooling for Algeria: drivers publish rides, passengers book seats,
 -- cash cost-sharing payments, admin moderation.
 --
--- Run top-to-bottom in the Supabase SQL editor. Idempotent-friendly:
+-- LEGACY MANUAL BOOTSTRAP. For new installations, run the files in
+-- supabase/migrations in lexical order instead. Never rerun this file after
+-- the hardening migrations: its original grants and policies are intentionally
+-- superseded by those migrations.
+--
+-- The base schema is idempotent-friendly for first-time manual setup:
 --   * CREATE TABLE IF NOT EXISTS
 --   * DO blocks for enums, DROP POLICY IF EXISTS before CREATE POLICY
 --   * CREATE OR REPLACE FUNCTION / VIEW, DROP TRIGGER IF EXISTS
@@ -1163,6 +1168,6 @@ COMMENT ON VIEW public.public_profiles IS
 -- ============================================================================
 -- End of schema. Post-install checklist (outside this file):
 --   * Create private storage bucket 'driver-documents' + storage policies.
---   * Promote the first admin via service role: UPDATE public.users SET role='admin' ...
+--   * Assign the first administrator in staff_members via service-role SQL.
 --   * Populate cities (wilayas) through the admin UI or a migration.
 -- ============================================================================

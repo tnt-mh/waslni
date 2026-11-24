@@ -8,6 +8,7 @@ import { LanguagePicker } from '../components/LanguagePicker';
 import { DemoAccountsSheet } from '../components/DemoAccounts';
 import { useStore, currentUser } from '../lib/store';
 import { useI18n } from '../i18n';
+import { runtimeMode } from '../lib/runtime';
 
 export function WelcomeScreen() {
   const { t } = useI18n();
@@ -38,9 +39,11 @@ export function WelcomeScreen() {
       <motion.div className="col gap-12" style={{ position: 'relative' }} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
         <Button block size="lg" onClick={() => navigate('/onboarding')}>{t('welcome.getStarted')}</Button>
         <Button block variant="ghost" onClick={() => navigate('/login')}>{t('welcome.login')}</Button>
-        <button className="btn ghost sm" style={{ color: 'rgba(255,255,255,0.75)' }} onClick={() => setDemoOpen(true)}>
-          <Sparkles size={15} /> {t('welcome.demoAccounts')}
-        </button>
+        {runtimeMode === 'demo' && (
+          <button className="btn ghost sm" style={{ color: 'rgba(255,255,255,0.75)' }} onClick={() => setDemoOpen(true)}>
+            <Sparkles size={15} /> {t('welcome.demoAccounts')}
+          </button>
+        )}
         <p className="tiny center" style={{ color: 'rgba(255,255,255,0.5)' }}>{t('welcome.legal')}</p>
       </motion.div>
       <DemoAccountsSheet open={demoOpen} onClose={() => setDemoOpen(false)} />

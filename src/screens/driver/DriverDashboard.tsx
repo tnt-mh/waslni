@@ -105,10 +105,25 @@ export function DriverDashboard() {
                   <span className="navy-text bold small">{formatPrice(ride.pricePerSeat * b.seats, lang)}</span>
                 </div>
                 <div className="row gap-8">
-                  <Button variant="outline" size="sm" block onClick={() => { decideBooking(b.id, false); toast(t('driver.rejected'), 'info'); }}>
+                  <Button variant="outline" size="sm" block onClick={async () => {
+                    try {
+                      const res = await decideBooking(b.id, false);
+                      if (!res.ok) return toast(t(res.error), 'error');
+                      toast(t('driver.rejected'), 'info');
+                    } catch {
+                      toast(t('common.error'), 'error');
+                    }
+                  }}>
                     <XCircle size={14} /> {t('driver.reject')}
                   </Button>
-                  <Button size="sm" block onClick={() => { const res = decideBooking(b.id, true); toast(res.ok ? t('driver.accepted') : t(res.error), res.ok ? 'success' : 'error'); }}>
+                  <Button size="sm" block onClick={async () => {
+                    try {
+                      const res = await decideBooking(b.id, true);
+                      toast(res.ok ? t('driver.accepted') : t(res.error), res.ok ? 'success' : 'error');
+                    } catch {
+                      toast(t('common.error'), 'error');
+                    }
+                  }}>
                     <CheckCircle2 size={14} /> {t('driver.accept')}
                   </Button>
                 </div>

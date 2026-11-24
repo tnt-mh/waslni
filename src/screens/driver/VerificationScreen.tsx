@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Car, CheckCircle2, Clock, FileImage, Plus, ShieldCheck, Trash2, Upload, XCircle } from 'lucide-react';
@@ -8,9 +8,38 @@ import { Badge, Banner, Button, Card, Field, Input, Progress, Select } from '../
 import { useStore, currentUser, getVerification } from '../../lib/store';
 import { compressImage } from '../../lib/utils';
 import { useI18n } from '../../i18n';
-import type { DocumentKind } from '../../lib/types';
+import type { DocumentKind, DriverDocument } from '../../lib/types';
 
 const KINDS: DocumentKind[] = ['id_card', 'license', 'registration', 'selfie'];
+
+function DocumentPreview({ document, reason }: { document: DriverDocument; reason: string }) {
+  const { t } = useI18n();
+  const getDocumentUrl = useStore((s) => s.getDocumentUrl);
+  const [url, setUrl] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setUrl('');
+    setFailed(false);
+    void getDocumentUrl(document.id, reason).then((result) => {
+      if (!active) return;
+      if (result.ok && result.url) setUrl(result.url);
+      else setFailed(true);
+    }).catch(() => {
+      if (active) setFailed(true);
+    });
+    return () => { active = false; setUrl(''); };
+  }, [document.id, reason, getDocumentUrl]);
+
+  if (url) return <img className="doc-thumb" src={url} alt={reason} />;
+  return (
+    <div className="doc-thumb row" style={{ justifyContent: 'center', color: 'var(--muted)' }}>
+      <FileImage size={24} />
+      {!failed && <span className="tiny">{t('common.loading')}</span>}
+    </div>
+  );
+}
 
 export function VerificationScreen() {
   const { t } = useI18n();
@@ -42,23 +71,33 @@ export function VerificationScreen() {
   const onFile = async (kind: DocumentKind, file: File | undefined) => {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) return toast(t('verify.docTooBig'), 'error');
+    let dataUrl: string;
     try {
-      const dataUrl = await compressImage(file);
-      const res = saveDocument({ kind, imageDataUrl: dataUrl, fileName: file.name });
+      dataUrl = await compressImage(file);
+    } catch {
+      toast(t('error.cameraUnavailable'), 'error');
+      return;
+    }
+    try {
+      const res = await saveDocument({ kind, imageDataUrl: dataUrl, fileName: file.name });
       if (!res.ok) toast(t(res.error), 'error');
       else toast(t('common.saved'), 'success');
     } catch {
-      toast(t('error.cameraUnavailable'), 'error');
+      toast(t('common.error'), 'error');
     }
   };
 
-  const submit = () => {
-    const res = submitVerification();
-    if (!res.ok) return toast(t(res.error), 'error');
-    toast(t('verify.submitted'), 'success');
+  const submit = async () => {
+    try {
+      const res = await submitVerification();
+      if (!res.ok) return toast(t(res.error), 'error');
+      toast(t('verify.submitted'), 'success');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
-  const saveVehicle = () => {
+  const saveVehicle = async () => {
     setVError('');
     if (!brand.trim() || !model.trim()) return setVError(t('common.required'));
     if (!/^\d{4,6}\s?\d{3}\s?\d{2}$/.test(plate.trim())) return setVError(t('verify.invalidPlate'));
@@ -66,11 +105,24 @@ export function VerificationScreen() {
     const s = Number(vSeats);
     if (!Number.isFinite(y) || y < 1980 || y > new Date().getFullYear() + 1) return setVError(t('common.error'));
     if (!Number.isFinite(s) || s < 1 || s > 7) return setVError(t('common.error'));
-    const res = addVehicle({ brand: brand.trim(), model: model.trim(), color: color.trim() || '—', year: y, plate: plate.trim(), seats: s });
-    if (!res.ok) return setVError(t(res.error));
-    setVehicleOpen(false);
-    setBrand(''); setModel(''); setColor(''); setPlate('');
-    toast(t('verify.vehicleSaved'), 'success');
+    try {
+      const res = await addVehicle({ brand: brand.trim(), model: model.trim(), color: color.trim() || '—', year: y, plate: plate.trim(), seats: s });
+      if (!res.ok) return setVError(t(res.error));
+      setVehicleOpen(false);
+      setBrand(''); setModel(''); setColor(''); setPlate('');
+      toast(t('verify.vehicleSaved'), 'success');
+    } catch {
+      setVError(t('common.error'));
+    }
+  };
+
+  const remove = async (kind: DocumentKind) => {
+    try {
+      const res = await removeDocument(kind);
+      if (!res.ok) toast(t(res.error), 'error');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   const statusIcon = verification.status === 'verified' ? <CheckCircle2 size={16} /> : verification.status === 'pending' ? <Clock size={16} /> : verification.status === 'rejected' ? <XCircle size={16} /> : <ShieldCheck size={16} />;
@@ -106,11 +158,11 @@ export function VerificationScreen() {
               </div>
               {doc ? (
                 <>
-                  <img className="doc-thumb" src={doc.imageDataUrl} alt={t(`verify.${kind === 'id_card' ? 'idCard' : kind}`)} />
+                  <DocumentPreview document={doc} reason={t(`verify.${kind === 'id_card' ? 'idCard' : kind}`)} />
                   {!locked && (
                     <div className="row gap-8">
                       <Button variant="outline" size="sm" block onClick={() => fileRefs.current[kind]?.click()}><Upload size={14} /> {t('verify.replace')}</Button>
-                      <Button variant="danger-ghost" size="sm" onClick={() => removeDocument(kind)}><Trash2 size={14} /></Button>
+                      <Button variant="danger-ghost" size="sm" onClick={async () => { await remove(kind); }}><Trash2 size={14} /></Button>
                     </div>
                   )}
                 </>

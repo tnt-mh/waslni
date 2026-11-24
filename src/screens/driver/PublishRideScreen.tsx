@@ -121,32 +121,41 @@ export function PublishRideScreen() {
     ? { frequency, daysOfWeek: frequency === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : daysOfWeek, until: until || null }
     : null;
 
-  const submit = () => {
+  const submit = async () => {
     if (!departureAt || !arrivalAt) return;
     const fields = {
       vehicleId, fromCityId, toCityId, departureAt, seatsTotal: seats,
       pricePerSeat: Number(price), pickupPoint: pickup.trim(), dropoffPoint: dropoff.trim(),
       stops, preferences: prefs, womenOnly, recurring: recurringRule, notes: notes.trim(),
     };
-    if (editRide) {
-      const res = updateRide(editRide.id, { ...fields, arrivalAt });
+    try {
+      if (editRide) {
+        const res = await updateRide(editRide.id, { ...fields, arrivalAt });
+        if (!res.ok) return toast(t(res.error), 'error');
+        toast(t('publish.changesSaved'), 'success');
+        navigate(`/driver/ride/${editRide.id}`);
+        return;
+      }
+      const res = await publishRide({ ...fields, durationMin });
+      if (!res.ok) return toast(t(res.error), 'error');
+      if (!res.rideId) return toast(t('common.error'), 'error');
+      setPublishedId(res.rideId);
+      window.scrollTo(0, 0);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
+  };
+
+  const saveRestricted = async () => {
+    if (!editRide) return;
+    try {
+      const res = await updateRide(editRide.id, { preferences: prefs, notes: notes.trim() });
       if (!res.ok) return toast(t(res.error), 'error');
       toast(t('publish.changesSaved'), 'success');
       navigate(`/driver/ride/${editRide.id}`);
-      return;
+    } catch {
+      toast(t('common.error'), 'error');
     }
-    const res = publishRide({ ...fields, durationMin });
-    if (!res.ok) return toast(t(res.error), 'error');
-    setPublishedId(res.rideId ?? null);
-    window.scrollTo(0, 0);
-  };
-
-  const saveRestricted = () => {
-    if (!editRide) return;
-    const res = updateRide(editRide.id, { preferences: prefs, notes: notes.trim() });
-    if (!res.ok) return toast(t(res.error), 'error');
-    toast(t('publish.changesSaved'), 'success');
-    navigate(`/driver/ride/${editRide.id}`);
   };
 
   if (verification.status !== 'verified') {

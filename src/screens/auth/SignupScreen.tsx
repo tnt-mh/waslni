@@ -9,6 +9,7 @@ import { LanguagePicker } from '../../components/LanguagePicker';
 import { useStore } from '../../lib/store';
 import { useI18n } from '../../i18n';
 import { isValidEmail } from '../../lib/utils';
+import { runtimeMode } from '../../lib/runtime';
 
 export function SignupScreen() {
   const { t } = useI18n();
@@ -20,6 +21,7 @@ export function SignupScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [globalError, setGlobalError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -34,9 +36,25 @@ export function SignupScreen() {
     const res = await signUp({ fullName, email, password });
     setLoading(false);
     if (!res.ok) return setGlobalError(t(res.error));
+    if (res.confirmationRequired) {
+      setConfirmationRequired(true);
+      return;
+    }
     navigate('/profile-setup');
     window.scrollTo(0, 0);
   };
+
+  if (confirmationRequired) {
+    return (
+      <Screen noNav>
+        <ScreenHeader right={<LanguagePicker />} />
+        <div className="screen-body col gap-16" style={{ paddingTop: 48 }}>
+          <Banner kind="success">{t('auth.confirmationRequired')}</Banner>
+          <Link to="/login" className="btn primary block">{t('welcome.login')}</Link>
+        </div>
+      </Screen>
+    );
+  }
 
   return (
     <Screen noNav>
@@ -73,7 +91,7 @@ export function SignupScreen() {
         <p className="center small muted">
           {t('auth.hasAccount')} <Link to="/login" className="bold">{t('welcome.login')}</Link>
         </p>
-        <p className="tiny muted-2 center">{t('auth.localAuthNotice')}</p>
+        <p className="tiny muted-2 center">{t(runtimeMode === 'demo' ? 'auth.localAuthNotice' : 'auth.productionAuthNotice')}</p>
       </div>
     </Screen>
   );

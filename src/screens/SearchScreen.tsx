@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { List, Map as MapIcon, Plus, SearchX, SlidersHorizontal } from 'lucide-react';
-import { Screen, EmptyState, Sheet } from '../components/feedback';
+import { Screen, EmptyState, Sheet, useToast } from '../components/feedback';
 import { ScreenHeader } from '../components/AppShell';
 import { Button, Segmented, Select, SkeletonCard, Toggle } from '../components/ui';
 import { SearchForm } from '../components/SearchForm';
@@ -20,6 +20,7 @@ const DEFAULT_FILTERS: Filters = { quiet: false, chatty: false, womenOnly: false
 export function SearchScreen() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
   const rides = useStore((s) => s.rides);
   const addRecentSearch = useStore((s) => s.addRecentSearch);
@@ -80,11 +81,16 @@ export function SearchScreen() {
   const fromName = cityName(useStore.getState().cities.find((c) => c.id === query?.fromCityId), lang);
   const toName = cityName(useStore.getState().cities.find((c) => c.id === query?.toCityId), lang);
 
-  const submit = (q: SearchQuery) => {
-    addRecentSearch(q);
-    setParams({ from: q.fromCityId, to: q.toCityId, date: q.date, seats: String(q.seats) });
-    setEditOpen(false);
-    window.scrollTo(0, 0);
+  const submit = async (q: SearchQuery) => {
+    try {
+      const res = await addRecentSearch(q);
+      if (!res.ok) return toast(t(res.error), 'error');
+      setParams({ from: q.fromCityId, to: q.toCityId, date: q.date, seats: String(q.seats) });
+      setEditOpen(false);
+      window.scrollTo(0, 0);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (

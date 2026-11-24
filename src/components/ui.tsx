@@ -168,16 +168,18 @@ export function StepsDots({ total, current }: { total: number; current: number }
 export function ListRow({ icon, title, subtitle, end, onClick, danger, static: isStatic }: {
   icon?: ReactNode; title: ReactNode; subtitle?: ReactNode; end?: ReactNode; onClick?: () => void; danger?: boolean; static?: boolean;
 }) {
-  return (
-    <button type="button" className={`list-row ${danger ? 'danger' : ''} ${isStatic ? 'static' : ''}`} onClick={onClick} tabIndex={isStatic ? -1 : 0}>
+  const content = (
+    <>
       {icon && <span className="row" style={{ color: danger ? 'var(--error)' : 'var(--navy)' }}>{icon}</span>}
       <span className="grow col" style={{ gap: 1 }}>
         <span className="small bold">{title}</span>
         {subtitle && <span className="tiny muted">{subtitle}</span>}
       </span>
       {end ?? (onClick && !isStatic ? <span className="chevron"><ChevronRight size={18} /></span> : null)}
-    </button>
+    </>
   );
+  if (isStatic) return <div className={`list-row static ${danger ? 'danger' : ''}`}>{content}</div>;
+  return <button type="button" className={`list-row ${danger ? 'danger' : ''}`} onClick={onClick}>{content}</button>;
 }
 
 export function Banner({ kind = 'info', children }: { kind?: 'info' | 'warning' | 'error' | 'success'; children: ReactNode }) {

@@ -60,10 +60,15 @@ export function ReservationDetailScreen() {
     } else copyShare();
   };
 
-  const contact = () => {
+  const contact = async () => {
     if (!driver) return;
-    const conv = ensureConversation(driver.id, ride.id, booking.id);
-    if (conv) navigate(`/chat/${conv}`);
+    try {
+      const conv = await ensureConversation(driver.id, ride.id, booking.id);
+      if (!conv) return toast(t('common.error'), 'error');
+      navigate(`/chat/${conv}`);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -113,7 +118,16 @@ export function ReservationDetailScreen() {
                 : <Badge variant="warning">{t('res.paymentPending')}</Badge>}
             </div>
             {!booking.passengerPaid ? (
-              <Button block variant="success" onClick={() => { confirmPayment(booking.id, 'passenger'); haptic(); toast(t('common.saved'), 'success'); }}>
+              <Button block variant="success" onClick={async () => {
+                try {
+                  const res = await confirmPayment(booking.id, 'passenger');
+                  if (!res.ok) return toast(t(res.error), 'error');
+                  haptic();
+                  toast(t('common.saved'), 'success');
+                } catch {
+                  toast(t('common.error'), 'error');
+                }
+              }}>
                 <Banknote size={16} /> {t('res.iPaid')}
               </Button>
             ) : !booking.driverReceived ? (
@@ -148,7 +162,15 @@ export function ReservationDetailScreen() {
       <ConfirmDialog
         open={cancelOpen}
         onClose={() => setCancelOpen(false)}
-        onConfirm={() => { cancelBooking(booking.id); toast(t('res.cancelled'), 'success'); }}
+        onConfirm={async () => {
+          try {
+            const res = await cancelBooking(booking.id);
+            if (!res.ok) return toast(t(res.error), 'error');
+            toast(t('res.cancelled'), 'success');
+          } catch {
+            toast(t('common.error'), 'error');
+          }
+        }}
         title={t('res.cancelBooking')}
         message={t('res.cancelConfirm')}
         danger

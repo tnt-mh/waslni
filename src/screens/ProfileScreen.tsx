@@ -41,27 +41,44 @@ export function ProfileScreen() {
     setEditOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!name.trim()) return setNameError(t('auth.nameRequired'));
-    updateProfile({ fullName: name.trim(), bio: bio.trim(), atmosphere });
-    toast(t('common.saved'), 'success');
-    setEditOpen(false);
+    try {
+      const res = await updateProfile({ fullName: name.trim(), bio: bio.trim(), atmosphere });
+      if (!res.ok) return setNameError(t(res.error));
+      toast(t('common.saved'), 'success');
+      setEditOpen(false);
+    } catch {
+      setNameError(t('common.error'));
+    }
   };
 
   const onPhoto = async (file: File | undefined) => {
     if (!file) return;
+    let dataUrl: string;
     try {
-      const dataUrl = await compressImage(file, 400, 0.8);
-      updateProfile({ photoUrl: dataUrl });
-      toast(t('common.saved'), 'success');
+      dataUrl = await compressImage(file, 400, 0.8);
     } catch {
       toast(t('error.cameraUnavailable'), 'error');
+      return;
+    }
+    try {
+      const res = await updateProfile({ photoUrl: dataUrl });
+      if (!res.ok) return toast(t(res.error), 'error');
+      toast(t('common.saved'), 'success');
+    } catch {
+      toast(t('common.error'), 'error');
     }
   };
 
-  const switchMode = (mode: Mode) => {
-    setMode(mode);
-    navigate('/');
+  const switchMode = async (mode: Mode) => {
+    try {
+      const res = await setMode(mode);
+      if (!res.ok) return toast(t(res.error), 'error');
+      navigate('/');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (
@@ -106,7 +123,14 @@ export function ProfileScreen() {
             <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => void onPhoto(e.target.files?.[0])} />
             <div className="row gap-8">
               <Button size="sm" variant="outline" onClick={() => photoRef.current?.click()}><Camera size={15} /> {me.photoUrl ? t('auth.changePhoto') : t('auth.addPhoto')}</Button>
-              {me.photoUrl && <Button size="sm" variant="ghost" onClick={() => updateProfile({ photoUrl: null })}>{t('auth.removePhoto')}</Button>}
+              {me.photoUrl && <Button size="sm" variant="ghost" onClick={async () => {
+                try {
+                  const res = await updateProfile({ photoUrl: null });
+                  if (!res.ok) toast(t(res.error), 'error');
+                } catch {
+                  toast(t('common.error'), 'error');
+                }
+              }}>{t('auth.removePhoto')}</Button>}
             </div>
           </div>
           <Field label={t('auth.fullName')} required error={nameError}>
@@ -144,7 +168,14 @@ export function ProfileScreen() {
                 <button type="button" className="grow small bold" style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', font: 'inherit' }} onClick={() => { setSavedOpen(false); navigate(`/user/${u.id}`); }}>
                   {u.fullName}
                 </button>
-                <button type="button" className="icon-btn" aria-label={t('ride.unsaveDriver')} onClick={() => toggleSavedDriver(u.id)}><Trash2 size={16} color="var(--error)" /></button>
+                <button type="button" className="icon-btn" aria-label={t('ride.unsaveDriver')} onClick={async () => {
+                  try {
+                    const res = await toggleSavedDriver(u.id);
+                    if (!res.ok) toast(t(res.error), 'error');
+                  } catch {
+                    toast(t('common.error'), 'error');
+                  }
+                }}><Trash2 size={16} color="var(--error)" /></button>
               </div>
             ))}
           </div>
@@ -154,7 +185,15 @@ export function ProfileScreen() {
       <ConfirmDialog
         open={logoutOpen}
         onClose={() => setLogoutOpen(false)}
-        onConfirm={() => { logout(); navigate('/welcome'); }}
+        onConfirm={async () => {
+          try {
+            const result = await logout();
+            if (!result.ok) return toast(t(result.error), 'error');
+            navigate('/welcome');
+          } catch {
+            toast(t('common.error'), 'error');
+          }
+        }}
         title={t('auth.logout')}
         message={t('auth.logoutConfirm')}
         confirmLabel={t('auth.logout')}

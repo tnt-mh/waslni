@@ -4,7 +4,12 @@
 
 > Le covoiturage rendu facile. — Carpooling, made easy.
 
-This repository ships a fully working **Progressive Web App** (the spec's permitted fallback when a native build isn't available) backed by a local, persistent demo store, **plus a production-ready Supabase SQL schema** (row-level security + seat-capacity trigger) ready to wire up.
+The application is a responsive, installable **PWA** with two explicitly separated modes:
+
+- **Production (default):** Supabase Auth, PostgreSQL, row-level security, private Storage, RPCs, and Realtime. Production never falls back to demo data or `localStorage`.
+- **Demo:** local seeded data, clearly labelled demo accounts, and local persistence. Select it only with `VITE_APP_MODE=demo`.
+
+See [UPGRADE-DELIVERY-REPORT.md](UPGRADE-DELIVERY-REPORT.md) for backup details, migration inventory, validation results, limitations, and deployment steps.
 
 ---
 
@@ -39,7 +44,10 @@ This repository ships a fully working **Progressive Web App** (the spec's permit
 - 1-to-1 messaging with ride context, quick replies, block/report. Demo auto-replies are clearly tagged.
 
 ### Admin
-- Users, document review (approve/reject), suspension, reports, review moderation, rides, reservations, analytics, cities, announcements — with strict role-based access.
+- Desktop-first dashboard with responsive mobile tables: users, document review, reports, moderation history, appeals, staff, rides, reservations, reviews, cities, and announcements.
+- Backend-enforced `super_admin`, `admin`, `moderator`, and `read_only` permissions.
+- Warnings, temporary timeouts, permanent bans, authorized reversals, appeal decisions, immutable audit records, and staff-only notes.
+- Restricted users stay authenticated and can view their own restriction history and submit appeals.
 
 ### Unique touches
 - Recurring rides, smart matching, women-only preference, favourite drivers, ride-request matching, and a savings / CO₂ calculator (labelled as estimates).
@@ -53,12 +61,12 @@ This repository ships a fully working **Progressive Web App** (the spec's permit
 | Framework | React 19 + TypeScript (strict) |
 | Build tool | Vite 6 |
 | Routing | React Router 7 (HashRouter) |
-| State | Zustand 5 (persisted to `localStorage`) |
+| State | Zustand 5; demo-only persistence |
 | Animation | Framer Motion 12 |
 | Icons | lucide-react |
 | Dates | date-fns |
 | Validation | zod |
-| Backend (production) | Supabase — see [`supabase/schema.sql`](supabase/schema.sql) |
+| Backend (production) | Supabase Auth, PostgreSQL 15, RLS, Storage, Realtime, Edge Functions |
 | Delivery | Installable PWA (manifest + service worker) |
 
 ---
@@ -71,14 +79,15 @@ This is a **Node.js** project, so the canonical, installable manifest is [`packa
 
 | Package | Version | Purpose |
 | --- | --- | --- |
+| `@supabase/supabase-js` | 2.119.2 | Production backend client |
 | `react` | 19.1.0 | UI library |
 | `react-dom` | 19.1.0 | React DOM renderer |
-| `react-router-dom` | 7.6.2 | Client-side routing |
-| `zustand` | 5.0.5 | State management + persistence |
+| `react-router-dom` | 7.18.6 | Client-side routing |
+| `zustand` | 5.0.5 | State management + demo-only persistence |
 | `framer-motion` | 12.43.0 | Animations & transitions |
 | `lucide-react` | 0.511.0 | Icon set |
 | `date-fns` | 4.1.0 | Date formatting & helpers |
-| `zod` | 3.25.7 | Schema validation |
+| `zod` | 4.6.7 | Schema validation |
 
 ### Dev dependencies
 
@@ -96,26 +105,38 @@ This is a **Node.js** project, so the canonical, installable manifest is [`packa
 ## Getting started
 
 ### Prerequisites
-- **Node.js 18+** (Node 20/22 LTS recommended) and **npm**.
+- **Node.js 20+** and **npm**.
+- A Supabase project for production.
+- Supabase CLI only when deploying migrations/functions from the terminal.
 
-### Install & run
+### Install
 
 ```bash
-# 1. install dependencies
 npm install
-
-# 2. start the dev server (http://localhost:5173)
-npm run dev
-
-# 3. type-check
-npm run typecheck
-
-# 4. production build (outputs to dist/)
-npm run build
-
-# 5. preview the production build locally
-npm run preview
 ```
+
+### Run the local demo
+
+```bash
+# macOS / Linux
+VITE_APP_MODE=demo npm run dev
+
+# Windows PowerShell
+$env:VITE_APP_MODE="demo"; npm run dev
+```
+
+Open `http://localhost:5173`. Production is the default, so `npm run dev` without Supabase configuration intentionally shows a setup error instead of loading demo data.
+
+### Type-check and build
+
+```bash
+npm run typecheck
+npm run build
+npm run preview
+npm audit --omit=dev
+```
+
+The production output is `dist/`.
 
 ### Demo accounts
 
@@ -125,7 +146,7 @@ On the welcome screen, open **"Comptes de démonstration"**. Password for every 
 | --- | --- | --- |
 | Amina Tounsi | Passenger | `amina@demo.waslni.dz` |
 | Karim Benali | Verified driver | `karim@demo.waslni.dz` |
-| Admin | Administrator | `admin@waslni.dz` |
+| Admin Waslni | Super administrator | `admin@waslni.dz` |
 
 Other seeded drivers/passengers (Yacine, Sara, Lina, Amine, Mohand, Nassim, Rym) are also available. Demo records are tagged **Démo** and kept separate from data you create.
 
@@ -135,43 +156,112 @@ Other seeded drivers/passengers (Yacine, Sara, Lina, Amine, Mohand, Nassim, Rym)
 
 ```
 .
-├── index.html                  # App shell, fonts, PWA meta
-├── public/
-│   ├── icon.svg                # Logo (road + pin + motion)
-│   ├── manifest.webmanifest    # PWA manifest
-│   ├── sw.js                   # Service worker
-│   └── illustrations/          # Onboarding artwork
+├── public/                         # PWA assets and service worker
 ├── src/
-│   ├── main.tsx                # Entry point + SW registration
-│   ├── App.tsx                 # Routes, auth guards, shell
-│   ├── components/             # UI kit, RideCard, SearchForm, CityPicker, MapView, …
-│   ├── screens/                # Passenger, driver, auth, admin, safety screens
-│   │   ├── auth/               # Welcome, onboarding, login, signup, phone OTP, profile setup
-│   │   └── driver/             # Dashboard, publish wizard, verification, manage ride
-│   ├── lib/                    # store, types, utils, cities, seed data
-│   ├── i18n/                   # fr / en / ar dictionaries + provider
-│   └── styles/global.css       # Design system (navy palette, RTL-aware)
-├── supabase/schema.sql         # Production schema: tables, RLS, capacity trigger
-├── requirements.txt            # Flat npm dependency listing (see note above)
-├── package.json                # Canonical dependency manifest + scripts
-└── vite.config.ts
+│   ├── components/                 # UI kit, public shell, admin shell/tables
+│   ├── screens/                    # Passenger, driver, auth, admin, safety
+│   ├── lib/                        # Types, demo store, cloud store, runtime, staff
+│   └── i18n/                       # FR / EN / AR dictionaries and RTL provider
+├── supabase/
+│   ├── migrations/                 # Ordered base schema, hardening, RPCs, storage, seed
+│   ├── functions/document-url/     # Audited 60-second private document URLs
+│   └── schema.sql                  # Legacy manual bootstrap reference
+├── .env.example
+├── package.json
+├── package-lock.json
+├── requirements.txt
+└── UPGRADE-DELIVERY-REPORT.md
 ```
 
 ---
 
 ## PWA
 
-The app is installable: it ships a web manifest, theme colour, icons, and a service worker (registered in production builds). It works offline for the local demo store; cloud sync requires Supabase.
+The app is installable: it ships a web manifest, theme colour, icons, and a service worker (registered in production builds). Offline persistence applies only to the explicitly selected local demo mode; production requires Supabase and displays connection errors rather than pretending data was saved.
 
-## Production backend (Supabase)
+## Production configuration
 
-[`supabase/schema.sql`](supabase/schema.sql) defines the full relational model (users, vehicles, documents, verifications, rides, bookings, reviews, reports, messages, notifications, cities, announcements, …) with **row-level security** and a **trigger that prevents overbooking / negative seat capacity**. To go live:
+Copy the example and fill in public project settings:
 
-1. Create a Supabase project and run `schema.sql`.
-2. Add your project URL + anon key via the in-app **Settings → Integrations** screen (never commit service-role keys to the client).
-3. Replace the local store actions with Supabase calls.
+```bash
+cp .env.example .env.local
+```
 
-The in-app **Integrations** screen lists every external service (Supabase, SMS, maps, push, storage, location) and its connection status, so missing keys are explicit rather than silently faked.
+```dotenv
+VITE_APP_MODE=production
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
+VITE_MAPBOX_TOKEN=
+VITE_VAPID_PUBLIC_KEY=
+```
+
+Only the Supabase **anon/public key** belongs in frontend environment variables. Never put a service-role key, database password, SMS credential, or private document URL in `VITE_*` variables or client code. The in-app **Settings → Integrations** screen reports configuration and connection status without claiming unavailable services are connected.
+
+## Supabase deployment
+
+### 1. Configure Auth and Storage
+
+1. Create a PostgreSQL 15 Supabase project.
+2. Enable email authentication and configure the application Site URL and redirect URLs.
+3. For phone OTP, configure a real SMS provider and template. Until delivery succeeds, the app states that no code has been sent; demo OTP behavior is unavailable in production.
+4. Keep `driver-documents` private. Migration `20261124000300_private_storage.sql` creates the bucket and owner-scoped policies.
+
+### 2. Apply migrations in lexical order
+
+The migration directory is self-contained for a fresh database:
+
+```text
+20261123999900_base_schema.sql
+20261124000000_staff_moderation.sql
+20261124000100_hardened_rls.sql
+20261124000200_backend_rpcs.sql
+20261124000300_private_storage.sql
+20261124000400_private_access_and_contracts.sql
+20261124000500_security_races_and_privacy.sql
+20261124000600_ride_and_conversation_parity.sql
+20261124000700_seed_cities.sql
+```
+
+With the Supabase CLI:
+
+```bash
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
+```
+
+Alternatively, run each file top-to-bottom in the Supabase SQL editor in the order above. Take a database backup first and review the migration plan before applying it to an existing project.
+
+[`supabase/schema.sql`](supabase/schema.sql) is retained as a **legacy manual bootstrap reference**. Do not rerun it after the hardening migrations; doing so would restore superseded grants and policies.
+
+### 3. Assign the first administrator
+
+Create the administrator account through normal signup, then run a one-time service-role SQL command in the Supabase SQL editor:
+
+```sql
+insert into public.staff_members (user_id, role, active, created_by)
+select id, 'super_admin', true, null
+from public.users
+where email = 'administrator@example.com'
+on conflict (user_id) do update
+set role = 'super_admin', active = true, updated_at = now();
+```
+
+Authorization uses `staff_members`, not the editable frontend or the legacy `users.role` flag. Never expose the service-role key to perform this operation from the browser.
+
+### 4. Deploy the private-document Edge Function
+
+The frontend never receives a public identity-document URL. The `document-url` function validates the caller, records access, and returns a 60-second signed URL.
+
+```bash
+supabase functions deploy document-url
+supabase secrets set ALLOWED_ORIGINS=https://your-domain.example
+```
+
+`ALLOWED_ORIGINS` is a comma-separated list of exact frontend origins. Supabase supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to the function runtime; the service-role key is used only inside that server-side function.
+
+### 5. Deploy the frontend
+
+Set production environment variables in the hosting provider, run `npm run build`, and deploy `dist/`. The existing Wasmer deployment can be updated with the new output and environment variables; the published demo URL is not automatically converted into a production backend.
 
 ---
 
@@ -185,6 +275,35 @@ The in-app **Integrations** screen lists every external service (Supabase, SMS, 
 
 ---
 
+## Security model
+
+- Supabase Auth owns production credentials and sessions.
+- PostgreSQL RLS and `SECURITY DEFINER` RPCs enforce ownership, staff permissions, booking transitions, seat capacity, moderation, and document access.
+- Privileged table writes are revoked from normal clients even when a policy exists.
+- Booking capacity is serialized on the ride row and protected by a partial unique active-booking index.
+- Identity documents use owner-prefixed paths in a private bucket. Metadata is soft-superseded so immutable access-audit foreign keys remain valid.
+- Staff notes, evidence, and moderation history are not exposed to normal users.
+- Warnings do not suspend accounts. Timeouts and bans are separate restrictions, and only authorized staff can reverse them.
+- Private/sensitive tables are excluded from Realtime publication. Private state refreshes after mutations, every 30 seconds while visible, and on focus/visibility changes.
+- A production connection failure is shown as an error; the app never silently switches to local data.
+
+Frontend permission helpers control navigation and presentation only. Backend checks are the security boundary.
+
+## Validation status
+
+The repository has no automated test runner yet. Completed checks include:
+
+- `npm run typecheck`
+- `npm run build`
+- `npm audit --omit=dev` with zero reported production vulnerabilities
+- Browser checks of demo passenger, driver, admin, mobile layout, Arabic RTL, and production fail-closed configuration
+- Browser checks of timeout routing, restriction privacy, appeal submission, independent reversal, restored access, and staff-role promotion
+- Static SQL migration review
+
+A real Supabase project was not available in the development environment. Migration execution, multi-user RLS tests, OTP delivery, booking-race tests, Storage/Edge Function deployment, and production Realtime must still be verified in the target project before launch. See the delivery report for the full test matrix and limitations.
+
+---
+
 ## Scripts
 
 | Command | Description |
@@ -193,6 +312,7 @@ The in-app **Integrations** screen lists every external service (Supabase, SMS, 
 | `npm run build` | Type-check + production build |
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | TypeScript check only |
+| `npm audit --omit=dev` | Audit production dependencies |
 
 ---
 

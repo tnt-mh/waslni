@@ -5,7 +5,7 @@ import { Banknote, Car, Flag, KeyRound, MessageCircle, Pencil, Play, Repeat, Sta
 import { Screen, EmptyState, ConfirmDialog, Sheet, useToast } from '../../components/feedback';
 import { ScreenHeader } from '../../components/AppShell';
 import { Avatar, Badge, Button, Card, IconButton, PinInput, SectionTitle } from '../../components/ui';
-import { useStore, currentUser, getSeatsAvailable } from '../../lib/store';
+import { useStore, currentUser, getSeatsAvailable, type Result } from '../../lib/store';
 import { cityName } from '../../lib/cities';
 import { formatDate, formatPrice, formatTime, haptic, timeAgo } from '../../lib/utils';
 import { useI18n } from '../../i18n';
@@ -66,26 +66,40 @@ export function ManageRideScreen() {
   const completed = bookings.filter((b) => b.status === 'completed');
   const userOf = (uid: string) => users.find((u) => u.id === uid);
 
-  const act = (res: { ok: boolean; error?: string }, successKey: string) => {
-    if (!res.ok) return toast(t(res.error ?? 'common.error'), 'error');
-    haptic();
-    toast(t(successKey), 'success');
+  const act = async (mutation: Result | Promise<Result>, successKey: string) => {
+    try {
+      const res = await mutation;
+      if (!res.ok) return toast(t(res.error), 'error');
+      haptic();
+      toast(t(successKey), 'success');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
-  const contact = (b: Booking) => {
-    const convId = ensureConversation(b.passengerId, ride.id, b.id);
-    navigate(`/chat/${convId}`);
+  const contact = async (b: Booking) => {
+    try {
+      const convId = await ensureConversation(b.passengerId, ride.id, b.id);
+      if (!convId) return toast(t('common.error'), 'error');
+      navigate(`/chat/${convId}`);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
-  const submitPin = () => {
+  const submitPin = async () => {
     if (!pinBooking) return;
-    const res = boardWithPin(pinBooking.id, pin);
-    if (!res.ok) return setPinError(t(res.error));
-    haptic();
-    toast(t('driver.boarded'), 'success');
-    setPinBooking(null);
-    setPin('');
-    setPinError('');
+    try {
+      const res = await boardWithPin(pinBooking.id, pin);
+      if (!res.ok) return setPinError(t(res.error));
+      haptic();
+      toast(t('driver.boarded'), 'success');
+      setPinBooking(null);
+      setPin('');
+      setPinError('');
+    } catch {
+      setPinError(t('common.error'));
+    }
   };
 
   return (
@@ -115,7 +129,7 @@ export function ManageRideScreen() {
 
         {ride.status === 'published' && (
           <div className="col gap-8">
-            <Button block size="lg" onClick={() => act(startRide(ride.id), 'driver.rideStarted')}><Play size={18} /> {t('driver.startRide')}</Button>
+            <Button block size="lg" onClick={async () => { await act(startRide(ride.id), 'driver.rideStarted'); }}><Play size={18} /> {t('driver.startRide')}</Button>
             <div className="row gap-8">
               <Button block variant="success" onClick={() => setConfirm('complete')}><Flag size={16} /> {t('driver.completeRide')}</Button>
               <Button block variant="danger-ghost" onClick={() => setConfirm('cancel')}>{t('driver.cancelRide')}</Button>
@@ -144,7 +158,7 @@ export function ManageRideScreen() {
                     <IconButton label={t('ride.viewProfile')} onClick={() => navigate(`/user/${b.passengerId}`)}><Star size={17} /></IconButton>
                   </div>
                   <div className="row gap-8">
-                    <Button block size="sm" variant="success" onClick={() => act(decideBooking(b.id, true), 'driver.accepted')}>{t('driver.accept')}</Button>
+                    <Button block size="sm" variant="success" onClick={async () => { await act(decideBooking(b.id, true), 'driver.accepted'); }}>{t('driver.accept')}</Button>
                     <Button block size="sm" variant="outline" onClick={() => setRejectId(b.id)}>{t('driver.reject')}</Button>
                   </div>
                 </Card>
@@ -174,10 +188,10 @@ export function ManageRideScreen() {
                     {!b.boardedAt && (
                       <>
                         <Button block size="sm" onClick={() => { setPinBooking(b); setPin(''); setPinError(''); }}><KeyRound size={15} /> {t('driver.markOnboard')}</Button>
-                        <Button size="sm" variant="danger-ghost" onClick={() => act(markNoShow(b.id), 'common.saved')} aria-label={t('res.status.no_show')}><XCircle size={16} /></Button>
+                        <Button size="sm" variant="danger-ghost" onClick={async () => { await act(markNoShow(b.id), 'common.saved'); }} aria-label={t('res.status.no_show')}><XCircle size={16} /></Button>
                       </>
                     )}
-                    <Button block size="sm" variant="outline" onClick={() => contact(b)}><MessageCircle size={15} /> {t('common.send')}</Button>
+                    <Button block size="sm" variant="outline" onClick={async () => { await contact(b); }}><MessageCircle size={15} /> {t('common.send')}</Button>
                   </div>
                 </Card>
               );
@@ -204,7 +218,7 @@ export function ManageRideScreen() {
                     ) : b.passengerPaid ? (
                       <>
                         <p className="tiny muted">{t('res.paymentPassengerDone')}</p>
-                        <Button block size="sm" variant="success" onClick={() => act(confirmPayment(b.id, 'driver'), 'res.paymentConfirmed')}><Banknote size={15} /> {t('res.driverReceived')}</Button>
+                        <Button block size="sm" variant="success" onClick={async () => { await act(confirmPayment(b.id, 'driver'), 'res.paymentConfirmed'); }}><Banknote size={15} /> {t('res.driverReceived')}</Button>
                       </>
                     ) : (
                       <p className="tiny muted">{t('res.paymentPending')}</p>
@@ -230,7 +244,7 @@ export function ManageRideScreen() {
       <ConfirmDialog
         open={confirm === 'complete'}
         onClose={() => setConfirm(null)}
-        onConfirm={() => act(completeRide(ride.id), 'driver.rideCompleted')}
+        onConfirm={async () => { await act(completeRide(ride.id), 'driver.rideCompleted'); }}
         title={t('driver.completeRide')}
         message={t('driver.completeConfirm')}
         confirmLabel={t('driver.completeRide')}
@@ -238,7 +252,7 @@ export function ManageRideScreen() {
       <ConfirmDialog
         open={confirm === 'cancel'}
         onClose={() => setConfirm(null)}
-        onConfirm={() => act(cancelRide(ride.id), 'driver.rideCancelled')}
+        onConfirm={async () => { await act(cancelRide(ride.id), 'driver.rideCancelled'); }}
         title={t('driver.cancelRide')}
         message={t('driver.cancelRideConfirm')}
         confirmLabel={t('driver.cancelRide')}
@@ -247,7 +261,7 @@ export function ManageRideScreen() {
       <ConfirmDialog
         open={!!rejectId}
         onClose={() => setRejectId(null)}
-        onConfirm={() => { if (rejectId) act(decideBooking(rejectId, false), 'driver.rejected'); }}
+        onConfirm={async () => { if (rejectId) await act(decideBooking(rejectId, false), 'driver.rejected'); }}
         title={t('driver.reject')}
         message={t('driver.rejectConfirm')}
         confirmLabel={t('driver.reject')}

@@ -50,16 +50,22 @@ export function BookScreen() {
   }
 
   const total = ride.pricePerSeat * seats;
-  const submit = () => {
+  const submit = async () => {
     setLoading(true);
-    const res = requestBooking(ride.id, seats);
-    setLoading(false);
-    if (!res.ok) {
-      toast(t(res.error, { count: available }), 'error');
-      return;
+    try {
+      const res = await requestBooking(ride.id, seats);
+      if (!res.ok) {
+        toast(t(res.error, { count: available }), 'error');
+        return;
+      }
+      if (!res.bookingId) return toast(t('common.error'), 'error');
+      haptic([20, 40, 20]);
+      setDone(res.bookingId);
+    } catch {
+      toast(t('common.error'), 'error');
+    } finally {
+      setLoading(false);
     }
-    haptic([20, 40, 20]);
-    setDone(res.bookingId!);
   };
 
   return (

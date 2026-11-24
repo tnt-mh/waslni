@@ -6,12 +6,15 @@ import { Avatar, Badge } from './ui';
 import { useStore } from '../lib/store';
 import { useI18n } from '../i18n';
 import { DEMO_PASSWORD } from '../lib/seed';
+import { runtimeMode } from '../lib/runtime';
 
 export function DemoAccountsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const users = useStore(useShallow((s) => s.users.filter((u) => u.isDemo)));
   const loginDemo = useStore((s) => s.loginDemo);
+
+  if (runtimeMode !== 'demo') return null;
 
   const pick = (id: string) => {
     loginDemo(id);

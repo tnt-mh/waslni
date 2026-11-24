@@ -15,7 +15,6 @@ export function ProfileSetupScreen() {
   const navigate = useNavigate();
   const user = useStore(currentUser);
   const updateProfile = useStore((s) => s.updateProfile);
-  const setLanguage = useStore((s) => s.setLanguage);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState(user?.fullName ?? '');
@@ -24,6 +23,7 @@ export function ProfileSetupScreen() {
   const [gender, setGender] = useState<Gender>(user?.gender ?? 'unspecified');
   const [lang, setLang] = useState<Language>(user?.language ?? 'fr');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (!user) return <Navigate to="/welcome" replace />;
 
@@ -37,16 +37,23 @@ export function ProfileSetupScreen() {
     }
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (fullName.trim().length < 3) return setError(t('auth.nameRequired'));
-    updateProfile({
-      fullName: fullName.trim(), photoUrl: photo, dateOfBirth: birth || null, gender, language: lang,
-    });
-    setLanguage(lang);
-    toast(t('common.saved'), 'success');
-    navigate('/');
-    window.scrollTo(0, 0);
+    setSaving(true);
+    try {
+      const result = await updateProfile({
+        fullName: fullName.trim(), photoUrl: photo, dateOfBirth: birth || null, gender, language: lang,
+      });
+      if (!result.ok) return toast(t(result.error), 'error');
+      toast(t('common.saved'), 'success');
+      navigate('/');
+      window.scrollTo(0, 0);
+    } catch {
+      toast(t('common.error'), 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -100,7 +107,7 @@ export function ProfileSetupScreen() {
             <Banner kind="info">{t('profile.phoneNotVerified')} — {t('auth.otpDemoNotice')}</Banner>
           )}
 
-          <Button block size="lg" type="submit">{t('auth.finish')}</Button>
+          <Button block size="lg" type="submit" disabled={saving}>{t('auth.finish')}</Button>
         </form>
       </div>
     </Screen>

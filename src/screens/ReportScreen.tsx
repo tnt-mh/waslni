@@ -46,20 +46,30 @@ export function ReportScreen() {
     );
   }
 
-  const submit = () => {
+  const submit = async () => {
     setError('');
     if (!reason) return setError(t('common.required'));
-    const res = addReport({ targetType: type, targetId: id!, reason, details: details.trim() });
-    if (!res.ok) return setError(t(res.error));
-    toast(t('report.submitted'), 'success');
-    navigate(-1);
+    try {
+      const res = await addReport({ targetType: type, targetId: id!, reason, details: details.trim() });
+      if (!res.ok) return setError(t(res.error));
+      toast(t('report.submitted'), 'success');
+      navigate(-1);
+    } catch {
+      setError(t('common.error'));
+    }
   };
 
-  const block = () => {
+  const block = async () => {
     if (!targetUser) return;
-    const convId = ensureConversation(targetUser.id);
-    if (convId) blockInConversation(convId, true);
-    toast(t('report.blocked'), 'success');
+    try {
+      const convId = await ensureConversation(targetUser.id);
+      if (!convId) return toast(t('common.error'), 'error');
+      const res = await blockInConversation(convId, true);
+      if (!res.ok) return toast(t(res.error), 'error');
+      toast(t('report.blocked'), 'success');
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   return (

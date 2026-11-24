@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Heart, Leaf, MapPin, PiggyBank, Plus, Ticket } from 'lucide-react';
-import { Screen } from '../components/feedback';
+import { Screen, useToast } from '../components/feedback';
 import { NotifBell } from '../components/AppShell';
 import { Logo } from '../components/Logo';
 import { SearchForm } from '../components/SearchForm';
@@ -17,6 +17,7 @@ import type { SearchQuery } from '../lib/types';
 export function HomeScreen() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const toast = useToast();
   const user = useStore(currentUser)!;
   const cities = useStore((s) => s.cities);
   const rides = useStore((s) => s.rides);
@@ -36,10 +37,15 @@ export function HomeScreen() {
     [bookings, rides, user.id],
   );
 
-  const goSearch = (q: SearchQuery) => {
-    addRecentSearch(q);
-    navigate(`/search?from=${q.fromCityId}&to=${q.toCityId}&date=${q.date}&seats=${q.seats}`);
-    window.scrollTo(0, 0);
+  const goSearch = async (q: SearchQuery) => {
+    try {
+      const res = await addRecentSearch(q);
+      if (!res.ok) return toast(t(res.error), 'error');
+      navigate(`/search?from=${q.fromCityId}&to=${q.toCityId}&date=${q.date}&seats=${q.seats}`);
+      window.scrollTo(0, 0);
+    } catch {
+      toast(t('common.error'), 'error');
+    }
   };
 
   const alger = cities.find((c) => c.id === 'w16')!;
@@ -65,7 +71,7 @@ export function HomeScreen() {
             <SectionTitle title={t('home.recentSearches')} />
             <div className="scroll-x">
               {recent.map((r) => (
-                <button key={r.id} className="chip" onClick={() => goSearch(r)}>
+                <button key={r.id} className="chip" onClick={async () => { await goSearch(r); }}>
                   <MapPin size={13} />
                   {cityName(cities.find((c) => c.id === r.fromCityId), lang)} → {cityName(cities.find((c) => c.id === r.toCityId), lang)}
                 </button>
@@ -77,11 +83,12 @@ export function HomeScreen() {
         <SectionTitle title={t('home.popularDestinations')} />
         <div className="scroll-x">
           {POPULAR_ROUTES.filter(([, to]) => to !== 'w16').map(([fromId, toId]) => {
-            const city = cities.find((c) => c.id === toId);
-            if (!city) return null;
-            const count = rides.filter((r) => r.status === 'published' && r.toCityId === toId && new Date(r.departureAt).getTime() > Date.now()).length;
+            const fromCity = cities.find((c) => c.id === fromId || c.code === Number(fromId.slice(1)));
+            const city = cities.find((c) => c.id === toId || c.code === Number(toId.slice(1)));
+            if (!fromCity || !city) return null;
+            const count = rides.filter((r) => r.status === 'published' && r.toCityId === city.id && new Date(r.departureAt).getTime() > Date.now()).length;
             return (
-              <Card key={toId} clickable className="col gap-4" style={{ minWidth: 132, padding: 14 }} onClick={() => goSearch({ fromCityId: fromId, toCityId: toId, date: new Date().toISOString().slice(0, 10), seats: 1 })}>
+              <Card key={city.id} clickable className="col gap-4" style={{ minWidth: 132, padding: 14 }} onClick={async () => { await goSearch({ fromCityId: fromCity.id, toCityId: city.id, date: new Date().toISOString().slice(0, 10), seats: 1 }); }}>
                 <span className="bold small">{cityName(city, lang)}</span>
                 <span className="tiny muted">{count} {t('nav.myRides').toLowerCase()}</span>
                 <ArrowRight size={14} color="var(--navy)" />

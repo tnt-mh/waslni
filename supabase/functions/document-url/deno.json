@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "check": "deno check index.ts"
+  },
+  "imports": {
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2"
+  }
+}

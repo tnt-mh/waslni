@@ -2,6 +2,8 @@ export type Language = 'fr' | 'ar' | 'en';
 export type Mode = 'passenger' | 'driver';
 export type Gender = 'female' | 'male' | 'unspecified';
 export type UserRole = 'user' | 'admin';
+export type StaffRole = 'super_admin' | 'admin' | 'moderator' | 'read_only';
+export type RestrictionStatus = 'active' | 'timeout' | 'banned';
 
 export interface User {
   id: string;
@@ -24,6 +26,8 @@ export interface User {
   atmosphere: string[];
   createdAt: string;
   isDemo: boolean;
+  staffRole?: StaffRole | null;
+  restrictionStatus?: RestrictionStatus;
 }
 
 export type VerificationStatus =
@@ -40,6 +44,7 @@ export interface DriverDocument {
   userId: string;
   kind: DocumentKind;
   imageDataUrl: string;
+  storagePath?: string | null;
   fileName: string;
   uploadedAt: string;
 }
@@ -212,10 +217,12 @@ export interface Report {
   targetId: string;
   reason: ReportReason;
   details: string;
-  status: 'open' | 'resolved' | 'dismissed';
+  status: 'open' | 'in_review' | 'resolved' | 'dismissed';
   action: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  assignedTo?: string | null;
+  resolvedBy?: string | null;
 }
 
 export type NotificationType =
@@ -229,7 +236,9 @@ export type NotificationType =
   | 'ride_match'
   | 'announcement'
   | 'payment'
-  | 'review_request';
+  | 'review_request'
+  | 'moderation'
+  | 'appeal_update';
 
 export interface AppNotification {
   id: string;
@@ -240,6 +249,7 @@ export interface AppNotification {
   route: string | null;
   read: boolean;
   createdAt: string;
+  params?: Record<string, string | number>;
 }
 
 export interface TrustedContact {
@@ -287,4 +297,73 @@ export interface SearchQuery {
   toCityId: string;
   date: string;
   seats: number;
+}
+
+export interface StaffMember {
+  userId: string;
+  role: StaffRole;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountRestriction {
+  id: string;
+  userId: string;
+  kind: 'warning' | 'timeout' | 'ban';
+  reason: string;
+  publicMessage: string;
+  internalNote: string;
+  startsAt: string;
+  expiresAt: string | null;
+  active: boolean;
+  createdBy: string;
+  createdAt: string;
+  reversedAt: string | null;
+  reversedBy: string | null;
+}
+
+export type ModerationActionType =
+  | 'warning'
+  | 'timeout'
+  | 'ban'
+  | 'unban'
+  | 'reverse_ban'
+  | 'hide_review'
+  | 'restore_review'
+  | 'resolve_report'
+  | 'dismiss_report'
+  | 'assign_report'
+  | 'verify_driver'
+  | 'reject_driver'
+  | 'staff_role_change';
+
+export interface ModerationAction {
+  id: string;
+  actorId: string;
+  subjectId: string | null;
+  actionType: ModerationActionType;
+  targetType: 'user' | 'review' | 'report' | 'verification' | 'staff';
+  targetId: string | null;
+  reason: string;
+  publicMessage: string;
+  internalNote: string;
+  durationMinutes: number | null;
+  expiresAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ModerationAppeal {
+  id: string;
+  actionId: string;
+  appellantId: string;
+  statement: string;
+  status: 'open' | 'under_review' | 'granted' | 'denied';
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  publicMessage?: string | null;
+  internalNote?: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
 }

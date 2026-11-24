@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
-import { Banknote, Bell, Car, CheckCheck, CheckCircle2, Clock, Megaphone, MessageCircle, ShieldCheck, Star, Ticket, XCircle } from 'lucide-react';
-import { Screen, EmptyState } from '../components/feedback';
+import { Banknote, Bell, Car, CheckCheck, CheckCircle2, Clock, Gavel, Megaphone, MessageCircle, MessageSquareText, ShieldCheck, Star, Ticket, XCircle } from 'lucide-react';
+import { Screen, EmptyState, useToast } from '../components/feedback';
 import { ScreenHeader } from '../components/AppShell';
 import { IconButton } from '../components/ui';
 import { useStore, currentUser } from '../lib/store';
@@ -21,11 +21,14 @@ const ICONS: Record<NotificationType, typeof Bell> = {
   announcement: Megaphone,
   payment: Banknote,
   review_request: Star,
+  moderation: Gavel,
+  appeal_update: MessageSquareText,
 };
 
 export function NotificationsScreen() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const toast = useToast();
   const me = useStore(currentUser)!;
   const notifications = useStore(useShallow((s) => s.notifications.filter((n) => n.userId === me.id)));
   const markNotificationRead = useStore((s) => s.markNotificationRead);
@@ -37,7 +40,14 @@ export function NotificationsScreen() {
     <Screen>
       <ScreenHeader
         title={t('notif.title')}
-        right={<IconButton label={t('notif.markAllRead')} onClick={markAllNotificationsRead}><CheckCheck size={19} /></IconButton>}
+        right={<IconButton label={t('notif.markAllRead')} onClick={async () => {
+          try {
+            const res = await markAllNotificationsRead();
+            if (!res.ok) toast(t(res.error), 'error');
+          } catch {
+            toast(t('common.error'), 'error');
+          }
+        }}><CheckCheck size={19} /></IconButton>}
       />
       <div className="screen-body col gap-8">
         {sorted.length === 0 ? (
@@ -45,20 +55,30 @@ export function NotificationsScreen() {
         ) : (
           sorted.map((n) => {
             const Icon = ICONS[n.type] ?? Bell;
+            const title = n.params ? t(`notif.${n.type}.title`, n.params) : n.title;
+            const body = n.params ? t(`notif.${n.type}.body`, n.params) : n.body;
             return (
               <button
                 key={n.id}
                 className="list-row"
                 style={!n.read ? { background: 'var(--blue-light)' } : undefined}
-                onClick={() => { markNotificationRead(n.id); if (n.route) navigate(n.route); }}
+                onClick={async () => {
+                  try {
+                    const res = await markNotificationRead(n.id);
+                    if (!res.ok) return toast(t(res.error), 'error');
+                    if (n.route) navigate(n.route);
+                  } catch {
+                    toast(t('common.error'), 'error');
+                  }
+                }}
               >
                 <span className="row" style={{ color: 'var(--navy)' }}><Icon size={19} /></span>
                 <span className="grow col" style={{ gap: 2, minWidth: 0 }}>
                   <span className="row between gap-8">
-                    <span className="small bold">{n.title}</span>
+                    <span className="small bold">{title}</span>
                     <span className="tiny muted-2" style={{ whiteSpace: 'nowrap' }}>{timeAgo(n.createdAt, lang)}</span>
                   </span>
-                  <span className="tiny muted">{n.body}</span>
+                  <span className="tiny muted">{body}</span>
                 </span>
                 {!n.read && <span className="dot" style={{ position: 'static', width: 8, height: 8, borderRadius: '50%', background: 'var(--navy)', flexShrink: 0 }} />}
               </button>

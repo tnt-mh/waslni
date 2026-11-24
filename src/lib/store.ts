@@ -1,16 +1,21 @@
-import { create } from 'zustand';
+import { create, type StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   AppNotification, Booking, City, Conversation, DriverDocument, DriverVerification,
-  Language, Message, Mode, NotificationType, Report, ReportReason,
-  Review, ReviewCategories, Ride, RideRequest, SearchQuery, User, Vehicle,
+  AccountRestriction, Language, Message, Mode, ModerationAction, ModerationAppeal,
+  NotificationType, Report, ReportReason, Review, ReviewCategories, Ride, RideRequest,
+  SearchQuery, StaffMember, StaffRole, User, Vehicle,
 } from './types';
 import { buildSeed, type SeedData } from './seed';
 import { generatePin, hashPassword, nowIso, uid } from './utils';
 import { cityName } from './cities';
 import { translate } from '../i18n';
+import { runtimeMode } from './runtime';
+import { canStaff, staffRoleOf } from './staff';
+import { useCloudStore } from './cloudStore';
 
 export type Result = { ok: true } | { ok: false; error: string };
+type MaybePromise<T> = T | Promise<T>;
 const ok: Result = { ok: true };
 const fail = (error: string): Result => ({ ok: false, error });
 
@@ -18,76 +23,140 @@ export interface AppState extends SeedData {
   sessionUserId: string | null;
   language: Language;
   onboardingSeen: boolean;
+  connectionStatus: 'idle' | 'loading' | 'ready' | 'error';
+  connectionError: string | null;
+  staffMembers: StaffMember[];
+  restrictions: AccountRestriction[];
+  moderationActions: ModerationAction[];
+  appeals: ModerationAppeal[];
 
-  setLanguage: (lang: Language) => void;
+  initialize: () => Promise<void>;
+  refresh: () => Promise<void>;
+  setLanguage: (lang: Language) => MaybePromise<Result>;
   setOnboardingSeen: () => void;
-  signUp: (p: { fullName: string; email: string; password: string }) => Promise<Result>;
+  signUp: (p: { fullName: string; email: string; password: string }) => Promise<Result & { confirmationRequired?: boolean }>;
   login: (email: string, password: string) => Promise<Result>;
-  phoneAuth: (phone: string) => Result & { isNew?: boolean };
+  requestPhoneOtp: (phone: string) => Promise<Result>;
+  verifyPhoneOtp: (phone: string, token: string) => Promise<Result & { isNew?: boolean }>;
+  phoneAuth: (phone: string) => MaybePromise<Result & { isNew?: boolean }>;
+  requestPasswordReset: (email: string) => Promise<Result>;
+  updatePassword: (password: string) => Promise<Result>;
   loginDemo: (userId: string) => void;
-  logout: () => void;
-  updateProfile: (p: Partial<Pick<User, 'fullName' | 'phone' | 'photoUrl' | 'dateOfBirth' | 'gender' | 'bio' | 'atmosphere' | 'language'>>) => void;
-  setMode: (mode: Mode) => void;
+  logout: () => MaybePromise<Result>;
+  updateProfile: (p: Partial<Pick<User, 'fullName' | 'phone' | 'photoUrl' | 'dateOfBirth' | 'gender' | 'bio' | 'atmosphere' | 'language'>>) => MaybePromise<Result>;
+  setMode: (mode: Mode) => MaybePromise<Result>;
   resetAll: () => void;
 
-  addVehicle: (p: Omit<Vehicle, 'id' | 'ownerId' | 'isDemo'>) => Result;
-  saveDocument: (doc: Omit<DriverDocument, 'id' | 'userId' | 'uploadedAt'>) => Result;
-  removeDocument: (kind: DriverDocument['kind']) => void;
-  submitVerification: () => Result;
-  reviewVerification: (userId: string, approve: boolean, reason?: string) => void;
+  addVehicle: (p: Omit<Vehicle, 'id' | 'ownerId' | 'isDemo'>) => MaybePromise<Result>;
+  saveDocument: (doc: Omit<DriverDocument, 'id' | 'userId' | 'uploadedAt'>) => MaybePromise<Result>;
+  removeDocument: (kind: DriverDocument['kind']) => MaybePromise<Result>;
+  getDocumentUrl: (documentId: string, reason: string) => Promise<Result & { url?: string }>;
+  submitVerification: () => MaybePromise<Result>;
+  reviewVerification: (userId: string, approve: boolean, reason?: string) => MaybePromise<Result>;
 
-  publishRide: (p: Omit<Ride, 'id' | 'driverId' | 'status' | 'createdAt' | 'isDemo' | 'arrivalAt'> & { durationMin: number }) => Result & { rideId?: string };
-  updateRide: (rideId: string, p: Partial<Ride>) => Result;
-  cancelRide: (rideId: string) => Result;
-  startRide: (rideId: string) => Result;
-  completeRide: (rideId: string) => Result;
+  publishRide: (p: Omit<Ride, 'id' | 'driverId' | 'status' | 'createdAt' | 'isDemo' | 'arrivalAt'> & { durationMin: number }) => MaybePromise<Result & { rideId?: string }>;
+  updateRide: (rideId: string, p: Partial<Ride>) => MaybePromise<Result>;
+  cancelRide: (rideId: string) => MaybePromise<Result>;
+  startRide: (rideId: string) => MaybePromise<Result>;
+  completeRide: (rideId: string) => MaybePromise<Result>;
 
-  requestBooking: (rideId: string, seats: number) => Result & { bookingId?: string };
-  decideBooking: (bookingId: string, accept: boolean) => Result;
-  cancelBooking: (bookingId: string) => Result;
-  boardWithPin: (bookingId: string, pin: string) => Result;
-  markNoShow: (bookingId: string) => Result;
-  confirmPayment: (bookingId: string, side: 'passenger' | 'driver') => Result;
-  submitReview: (p: { bookingId: string; stars: number; categories: ReviewCategories | null; text: string }) => Result;
+  requestBooking: (rideId: string, seats: number) => MaybePromise<Result & { bookingId?: string }>;
+  decideBooking: (bookingId: string, accept: boolean) => MaybePromise<Result>;
+  cancelBooking: (bookingId: string) => MaybePromise<Result>;
+  boardWithPin: (bookingId: string, pin: string) => MaybePromise<Result>;
+  markNoShow: (bookingId: string) => MaybePromise<Result>;
+  confirmPayment: (bookingId: string, side: 'passenger' | 'driver') => MaybePromise<Result>;
+  submitReview: (p: { bookingId: string; stars: number; categories: ReviewCategories | null; text: string }) => MaybePromise<Result>;
 
-  createRideRequest: (p: Omit<RideRequest, 'id' | 'passengerId' | 'status' | 'createdAt' | 'isDemo'>) => Result;
-  closeRideRequest: (id: string) => void;
+  createRideRequest: (p: Omit<RideRequest, 'id' | 'passengerId' | 'status' | 'createdAt' | 'isDemo'>) => MaybePromise<Result>;
+  closeRideRequest: (id: string) => MaybePromise<Result>;
 
-  ensureConversation: (otherUserId: string, rideId?: string | null, bookingId?: string | null) => string;
-  sendMessage: (conversationId: string, text: string) => Result;
-  markConversationRead: (conversationId: string) => void;
-  blockInConversation: (conversationId: string, block: boolean) => void;
+  ensureConversation: (otherUserId: string, rideId?: string | null, bookingId?: string | null) => MaybePromise<string>;
+  sendMessage: (conversationId: string, text: string) => MaybePromise<Result>;
+  markConversationRead: (conversationId: string) => MaybePromise<Result>;
+  blockInConversation: (conversationId: string, block: boolean) => MaybePromise<Result>;
 
-  addReport: (p: { targetType: Report['targetType']; targetId: string; reason: ReportReason; details: string }) => Result;
-  resolveReport: (reportId: string, action: string) => void;
-  dismissReport: (reportId: string) => void;
-  moderateReview: (reviewId: string, remove: boolean) => void;
+  addReport: (p: { targetType: Report['targetType']; targetId: string; reason: ReportReason; details: string }) => MaybePromise<Result>;
+  resolveReport: (reportId: string, action: string, internalNote?: string) => MaybePromise<Result>;
+  dismissReport: (reportId: string, internalNote?: string) => MaybePromise<Result>;
+  assignReport: (reportId: string, staffUserId: string) => MaybePromise<Result>;
+  moderateReview: (reviewId: string, remove: boolean, reason?: string) => MaybePromise<Result>;
+  setStaffRole: (userId: string, role: StaffRole, active: boolean) => MaybePromise<Result>;
+  applyModeration: (p: { userId: string; kind: 'warning' | 'timeout' | 'ban'; reason: string; publicMessage: string; internalNote: string; durationMinutes?: number }) => MaybePromise<Result>;
+  reverseRestriction: (restrictionId: string, reason: string, publicMessage: string, internalNote: string) => MaybePromise<Result>;
+  submitAppeal: (actionId: string, statement: string) => MaybePromise<Result>;
+  reviewAppeal: (appealId: string, decision: 'under_review' | 'granted' | 'denied', note: string, publicMessage?: string, internalNote?: string) => MaybePromise<Result>;
 
-  toggleSavedDriver: (driverId: string) => void;
-  addTrustedContact: (name: string, phone: string) => Result;
-  removeTrustedContact: (id: string) => void;
-  addRecentSearch: (q: SearchQuery) => void;
+  toggleSavedDriver: (driverId: string) => MaybePromise<Result>;
+  addTrustedContact: (name: string, phone: string) => MaybePromise<Result>;
+  removeTrustedContact: (id: string) => MaybePromise<Result>;
+  addRecentSearch: (q: SearchQuery) => MaybePromise<Result>;
 
-  markNotificationRead: (id: string) => void;
-  markAllNotificationsRead: () => void;
+  markNotificationRead: (id: string) => MaybePromise<Result>;
+  markAllNotificationsRead: () => MaybePromise<Result>;
 
-  suspendUser: (userId: string, suspend: boolean) => void;
-  addCity: (p: Omit<City, 'id'>) => Result;
-  sendAnnouncement: (title: string, body: string) => Result;
+  suspendUser: (userId: string, suspend: boolean) => MaybePromise<Result>;
+  addCity: (p: Omit<City, 'id'>) => MaybePromise<Result>;
+  sendAnnouncement: (title: string, body: string) => MaybePromise<Result>;
 }
 
 function initialState() {
+  const seed = buildSeed();
+  const createdAt = new Date(Date.now() - 12 * 86400000).toISOString();
+  const reversedAt = new Date(Date.now() - 2 * 86400000).toISOString();
+  const restrictionId = 'demo-restriction-reversed';
+  const actionId = 'demo-moderation-ban';
+  const staffMembers: StaffMember[] = [{
+    userId: 'u-admin', role: 'super_admin', active: true,
+    createdAt: new Date(Date.now() - 200 * 86400000).toISOString(),
+    updatedAt: createdAt,
+  }];
+  const restrictions: AccountRestriction[] = [{
+    id: restrictionId, userId: 'u-yacine', kind: 'ban',
+    reason: 'Demo audit example: identity mismatch required review.',
+    publicMessage: 'Your demo account restriction was reviewed and reversed.',
+    internalNote: 'Fictional demonstration record only.', startsAt: createdAt,
+    expiresAt: null, active: false, createdBy: 'u-admin', createdAt,
+    reversedAt, reversedBy: 'u-admin',
+  }];
+  const moderationActions: ModerationAction[] = [
+    {
+      id: 'demo-moderation-reversal', actorId: 'u-admin', subjectId: 'u-yacine',
+      actionType: 'reverse_ban', targetType: 'user', targetId: 'u-yacine',
+      reason: 'Demo audit example: review completed.', publicMessage: 'Access restored.',
+      internalNote: 'Fictional demonstration record only.', durationMinutes: null,
+      expiresAt: null, metadata: { restrictionId }, createdAt: reversedAt,
+    },
+    {
+      id: actionId, actorId: 'u-admin', subjectId: 'u-yacine', actionType: 'ban',
+      targetType: 'user', targetId: 'u-yacine', reason: 'Demo audit example.',
+      publicMessage: 'A demo restriction was applied.', internalNote: 'Fictional demonstration record only.',
+      durationMinutes: null, expiresAt: null, metadata: { restrictionId }, createdAt,
+    },
+  ];
+  const appeals: ModerationAppeal[] = [{
+    id: 'demo-appeal-granted', actionId, appellantId: 'u-yacine',
+    statement: 'This is a fictional appeal used to demonstrate the moderation workflow.',
+    status: 'granted', reviewedBy: 'u-admin', reviewNote: 'Demo review completed.',
+    publicMessage: 'The demo restriction was reversed.', internalNote: 'Fictional demonstration record only.',
+    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(), reviewedAt: reversedAt,
+  }];
   return {
-    ...buildSeed(),
-    sessionUserId: null as string | null,
+    ...seed,
+    users: seed.users.map((user) => user.id === 'u-admin' ? { ...user, staffRole: 'super_admin' as const } : user),
+    sessionUserId: null,
     language: 'fr' as Language,
     onboardingSeen: false,
+    connectionStatus: 'ready' as const,
+    connectionError: null,
+    staffMembers,
+    restrictions,
+    moderationActions,
+    appeals,
   };
 }
 
-export const useStore = create<AppState>()(
-  persist(
-    (set, get) => {
+const demoStateCreator: StateCreator<AppState> = (set, get) => {
       const notify = (userId: string, type: NotificationType, params: Record<string, string | number>, route: string | null) => {
         const user = get().users.find((u) => u.id === userId);
         if (!user) return;
@@ -96,7 +165,7 @@ export const useStore = create<AppState>()(
           id: uid(), userId, type,
           title: translate(lang, `notif.${type}.title`, params),
           body: translate(lang, `notif.${type}.body`, params),
-          route, read: false, createdAt: nowIso(),
+          route, read: false, createdAt: nowIso(), params,
         };
         set((s) => ({ notifications: [n, ...s.notifications] }));
       };
@@ -121,11 +190,15 @@ export const useStore = create<AppState>()(
       return {
         ...initialState(),
 
+        initialize: async () => undefined,
+        refresh: async () => undefined,
+
         setLanguage: (lang) => {
           set((s) => ({
             language: lang,
             users: s.sessionUserId ? s.users.map((u) => (u.id === s.sessionUserId ? { ...u, language: lang } : u)) : s.users,
           }));
+          return ok;
         },
         setOnboardingSeen: () => set({ onboardingSeen: true }),
 
@@ -157,7 +230,6 @@ export const useStore = create<AppState>()(
           if (!user || !user.passwordHash || !user.salt) return fail('auth.invalidCredentials');
           const hash = await hashPassword(password, user.salt);
           if (hash !== user.passwordHash) return fail('auth.invalidCredentials');
-          if (user.status === 'suspended') return fail('auth.suspended');
           set({ sessionUserId: user.id, language: user.language });
           return ok;
         },
@@ -166,7 +238,6 @@ export const useStore = create<AppState>()(
           const s = get();
           const existing = s.users.find((u) => u.phone === phone);
           if (existing) {
-            if (existing.status === 'suspended') return fail('auth.suspended');
             set({ sessionUserId: existing.id, language: existing.language });
             return { ok: true, isNew: false };
           }
@@ -186,24 +257,34 @@ export const useStore = create<AppState>()(
           return { ok: true, isNew: true };
         },
 
+        requestPhoneOtp: async () => ok,
+        verifyPhoneOtp: async (phone) => get().phoneAuth(phone),
+        requestPasswordReset: async () => fail('auth.resetUnavailableDemo'),
+        updatePassword: async () => fail('auth.resetUnavailableDemo'),
+
         loginDemo: (userId) => {
           const user = get().users.find((u) => u.id === userId && u.isDemo);
           if (!user) return;
           set({ sessionUserId: user.id, language: user.language });
         },
 
-        logout: () => set({ sessionUserId: null }),
+        logout: () => {
+          set({ sessionUserId: null });
+          return ok;
+        },
 
         updateProfile: (p) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          if (!id) return fail('common.error');
           set((s) => ({ users: s.users.map((u) => (u.id === id ? { ...u, ...p } : u)) }));
+          return ok;
         },
 
         setMode: (mode) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          if (!id) return fail('common.error');
           set((s) => ({ users: s.users.map((u) => (u.id === id ? { ...u, mode } : u)) }));
+          return ok;
         },
 
         resetAll: () => set({ ...initialState() }),
@@ -218,7 +299,7 @@ export const useStore = create<AppState>()(
 
         saveDocument: (doc) => {
           const id = get().sessionUserId;
-          if (!id) return fail('common.error');
+          if (!id || get().verifications.some((v) => v.userId === id && (v.status === 'pending' || v.status === 'verified'))) return fail('common.error');
           const existing = get().documents.find((d) => d.userId === id && d.kind === doc.kind);
           const full: DriverDocument = { ...doc, id: existing?.id ?? uid(), userId: id, uploadedAt: nowIso() };
           set((s) => ({
@@ -234,8 +315,16 @@ export const useStore = create<AppState>()(
 
         removeDocument: (kind) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          if (!id || get().verifications.some((v) => v.userId === id && (v.status === 'pending' || v.status === 'verified'))) return fail('common.error');
           set((s) => ({ documents: s.documents.filter((d) => !(d.userId === id && d.kind === kind)) }));
+          return ok;
+        },
+
+        getDocumentUrl: async (documentId) => {
+          const document = get().documents.find((d) => d.id === documentId);
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          if (!document || !me || (document.userId !== me.id && !canStaff(me, 'review_verification'))) return fail('common.error');
+          return { ok: true, url: document.imageDataUrl };
         },
 
         submitVerification: () => {
@@ -250,22 +339,37 @@ export const useStore = create<AppState>()(
               ? st.verifications.map((v) => (v.userId === id ? { ...v, status: 'pending', documentIds: docs.map((d) => d.id), submittedAt: nowIso(), reviewedAt: null, reason: null } : v))
               : [...st.verifications, { userId: id, status: 'pending', documentIds: docs.map((d) => d.id), submittedAt: nowIso(), reviewedAt: null, reason: null }],
           }));
-          for (const admin of get().users.filter((u) => u.role === 'admin')) {
+          for (const admin of get().users.filter((u) => canStaff(u, 'review_verification'))) {
             notify(admin.id, 'verification_update', { status: translate(admin.language, 'verify.status.pending') }, '/admin/verifications');
           }
           return ok;
         },
 
         reviewVerification: (userId, approve, reason) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const verification = get().verifications.find((v) => v.userId === userId);
+          if (!me || !canStaff(me, 'review_verification') || !verification || verification.status !== 'pending') return fail('common.error');
+          if (!approve && !reason?.trim()) return fail('common.required');
+          const now = nowIso();
           set((s) => ({
             verifications: s.verifications.map((v) =>
-              v.userId === userId ? { ...v, status: approve ? 'verified' : 'rejected', reviewedAt: nowIso(), reason: approve ? null : reason ?? null } : v,
+              v.userId === userId ? { ...v, status: approve ? 'verified' : 'rejected', reviewedAt: now, reason: approve ? null : reason!.trim() } : v,
             ),
+            moderationActions: [{
+              id: uid(), actorId: me.id, subjectId: userId,
+              actionType: approve ? 'verify_driver' : 'reject_driver',
+              targetType: 'verification', targetId: userId,
+              reason: approve ? 'Verification approved' : reason!.trim(),
+              publicMessage: approve ? 'Verification approved' : reason!.trim(),
+              internalNote: '', durationMinutes: null, expiresAt: null,
+              metadata: {}, createdAt: now,
+            }, ...s.moderationActions],
           }));
           const user = get().users.find((u) => u.id === userId);
           if (user) {
             notify(userId, 'verification_update', { status: translate(user.language, approve ? 'verify.status.verified' : 'verify.status.rejected') }, '/driver/verification');
           }
+          return ok;
         },
 
         publishRide: (p) => {
@@ -524,7 +628,10 @@ export const useStore = create<AppState>()(
         },
 
         closeRideRequest: (id) => {
-          set((s) => ({ rideRequests: s.rideRequests.map((r) => (r.id === id && r.passengerId === s.sessionUserId ? { ...r, status: 'closed' } : r)) }));
+          const request = get().rideRequests.find((r) => r.id === id && r.passengerId === get().sessionUserId);
+          if (!request) return fail('common.error');
+          set((s) => ({ rideRequests: s.rideRequests.map((r) => (r.id === id ? { ...r, status: 'closed' } : r)) }));
+          return ok;
         },
 
         ensureConversation: (otherUserId, rideId = null, bookingId = null) => {
@@ -574,22 +681,24 @@ export const useStore = create<AppState>()(
 
         markConversationRead: (conversationId) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          if (!id) return fail('common.error');
           set((s) => ({
             messages: s.messages.map((m) =>
               m.conversationId === conversationId && !m.readBy.includes(id) ? { ...m, readBy: [...m.readBy, id] } : m,
             ),
           }));
+          return ok;
         },
 
         blockInConversation: (conversationId, block) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          if (!id) return fail('common.error');
           set((s) => ({
             conversations: s.conversations.map((c) =>
               c.id === conversationId ? { ...c, blockedBy: block ? id : c.blockedBy === id ? null : c.blockedBy } : c,
             ),
           }));
+          return ok;
         },
 
         addReport: (p) => {
@@ -600,21 +709,191 @@ export const useStore = create<AppState>()(
           return ok;
         },
 
-        resolveReport: (reportId, action) => {
-          set((s) => ({ reports: s.reports.map((r) => (r.id === reportId ? { ...r, status: 'resolved', action, resolvedAt: nowIso() } : r)) }));
+        resolveReport: (reportId, action, internalNote = '') => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const report = get().reports.find((r) => r.id === reportId);
+          if (!me || !canStaff(me, 'manage_reports') || !report || !action.trim() || report.status === 'resolved' || report.status === 'dismissed') return fail('common.error');
+          const now = nowIso();
+          set((s) => ({
+            reports: s.reports.map((r) => r.id === reportId ? { ...r, status: 'resolved', action: action.trim(), resolvedAt: now, resolvedBy: me.id } : r),
+            moderationActions: [{
+              id: uid(), actorId: me.id, subjectId: report.targetType === 'user' ? report.targetId : null,
+              actionType: 'resolve_report', targetType: 'report', targetId: reportId,
+              reason: action.trim(), publicMessage: '', internalNote: internalNote.trim(),
+              durationMinutes: null, expiresAt: null, metadata: { reportId }, createdAt: now,
+            }, ...s.moderationActions],
+          }));
+          return ok;
         },
 
-        dismissReport: (reportId) => {
-          set((s) => ({ reports: s.reports.map((r) => (r.id === reportId ? { ...r, status: 'dismissed', action: null, resolvedAt: nowIso() } : r)) }));
+        dismissReport: (reportId, internalNote = '') => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const report = get().reports.find((r) => r.id === reportId);
+          if (!me || !canStaff(me, 'manage_reports') || !report || !internalNote.trim() || report.status === 'resolved' || report.status === 'dismissed') return fail('common.error');
+          const now = nowIso();
+          set((s) => ({
+            reports: s.reports.map((r) => r.id === reportId ? { ...r, status: 'dismissed', action: null, resolvedAt: now, resolvedBy: me.id } : r),
+            moderationActions: [{
+              id: uid(), actorId: me.id, subjectId: report.targetType === 'user' ? report.targetId : null,
+              actionType: 'dismiss_report', targetType: 'report', targetId: reportId,
+              reason: internalNote.trim(), publicMessage: '', internalNote: internalNote.trim(),
+              durationMinutes: null, expiresAt: null, metadata: { reportId }, createdAt: now,
+            }, ...s.moderationActions],
+          }));
+          return ok;
         },
 
-        moderateReview: (reviewId, remove) => {
-          set((s) => ({ reviews: s.reviews.map((r) => (r.id === reviewId ? { ...r, status: remove ? 'removed' : 'visible' } : r)) }));
+        assignReport: (reportId, staffUserId) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const report = get().reports.find((r) => r.id === reportId);
+          const assignee = get().users.find((u) => u.id === staffUserId);
+          if (!me || !canStaff(me, 'manage_reports') || !report || !assignee || !canStaff(assignee, 'manage_reports') || report.status === 'resolved' || report.status === 'dismissed') return fail('common.error');
+          set((s) => ({ reports: s.reports.map((r) => r.id === reportId ? { ...r, assignedTo: staffUserId, status: 'in_review' } : r) }));
+          return ok;
+        },
+
+        moderateReview: (reviewId, remove, reason = '') => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const review = get().reviews.find((r) => r.id === reviewId);
+          if (!me || !canStaff(me, 'moderate_content') || !review || (remove && !reason.trim())) return fail('common.error');
+          const now = nowIso();
+          set((s) => ({
+            reviews: s.reviews.map((r) => r.id === reviewId ? { ...r, status: remove ? 'removed' : 'visible' } : r),
+            moderationActions: [{
+              id: uid(), actorId: me.id, subjectId: review.authorId,
+              actionType: remove ? 'hide_review' : 'restore_review', targetType: 'review', targetId: reviewId,
+              reason: reason.trim(), publicMessage: '', internalNote: '',
+              durationMinutes: null, expiresAt: null, metadata: {}, createdAt: now,
+            }, ...s.moderationActions],
+          }));
+          return ok;
+        },
+
+        setStaffRole: (userId, role, active) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const target = get().users.find((u) => u.id === userId);
+          if (!me || staffRoleOf(me) !== 'super_admin' || !target || userId === me.id) return fail('common.error');
+          const now = nowIso();
+          set((s) => ({
+            users: s.users.map((u) => u.id === userId ? { ...u, role: role === 'read_only' || role === 'moderator' ? 'user' : 'admin', staffRole: role } : u),
+            staffMembers: [...s.staffMembers.filter((m) => m.userId !== userId), {
+              userId, role, active,
+              createdAt: s.staffMembers.find((m) => m.userId === userId)?.createdAt ?? now,
+              updatedAt: now,
+            }],
+            moderationActions: [{
+              id: uid(), actorId: me.id, subjectId: userId, actionType: 'staff_role_change',
+              targetType: 'staff', targetId: userId, reason: `Role changed to ${role}; active=${active}`,
+              publicMessage: '', internalNote: '', durationMinutes: null, expiresAt: null,
+              metadata: { role, active }, createdAt: now,
+            }, ...s.moderationActions],
+          }));
+          return ok;
+        },
+
+        applyModeration: (p) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const target = get().users.find((u) => u.id === p.userId);
+          const permission = p.kind === 'warning' ? 'moderate_content' : 'reverse_restriction';
+          if (!me || !target || target.id === me.id || !canStaff(me, permission) || !p.reason.trim()) return fail('common.error');
+          if (p.kind === 'timeout' && (!p.durationMinutes || !Number.isInteger(p.durationMinutes) || p.durationMinutes < 1 || p.durationMinutes > 525600)) return fail('common.error');
+          const now = nowIso();
+          const expiresAt = p.kind === 'timeout'
+            ? new Date(Date.now() + p.durationMinutes! * 60000).toISOString()
+            : null;
+          const id = uid();
+          set((s) => ({
+            restrictions: [{ id, userId: p.userId, kind: p.kind, reason: p.reason.trim(), publicMessage: p.publicMessage.trim(), internalNote: p.internalNote.trim(), startsAt: now, expiresAt, active: true, createdBy: me.id, createdAt: now, reversedAt: null, reversedBy: null }, ...s.restrictions],
+            moderationActions: [{ id: uid(), actorId: me.id, subjectId: p.userId, actionType: p.kind, targetType: 'user', targetId: p.userId, reason: p.reason.trim(), publicMessage: p.publicMessage.trim(), internalNote: p.internalNote.trim(), durationMinutes: p.durationMinutes ?? null, expiresAt, metadata: { restrictionId: id }, createdAt: now }, ...s.moderationActions],
+            users: p.kind === 'warning' ? s.users : s.users.map((u) => u.id === p.userId ? { ...u, status: 'suspended', restrictionStatus: p.kind === 'ban' ? 'banned' : 'timeout' } : u),
+          }));
+          notify(p.userId, 'moderation', { message: p.publicMessage.trim() || p.reason.trim() }, '/account/restrictions');
+          return ok;
+        },
+
+        reverseRestriction: (restrictionId, reason, publicMessage, internalNote) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const restriction = get().restrictions.find((r) => r.id === restrictionId);
+          if (!me || !canStaff(me, 'reverse_restriction') || !restriction || restriction.userId === me.id || !restriction.active || restriction.reversedAt || !reason.trim()) return fail('common.error');
+          const now = nowIso();
+          set((s) => {
+            const remaining = s.restrictions.find((r) => r.id !== restrictionId && r.userId === restriction.userId && r.active && !r.reversedAt && r.kind !== 'warning' && (!r.expiresAt || new Date(r.expiresAt).getTime() > Date.now()));
+            return {
+              restrictions: s.restrictions.map((r) => r.id === restrictionId ? { ...r, active: false, reversedAt: now, reversedBy: me.id } : r),
+              moderationActions: [{ id: uid(), actorId: me.id, subjectId: restriction.userId, actionType: restriction.kind === 'ban' ? 'reverse_ban' : 'unban', targetType: 'user', targetId: restriction.userId, reason: reason.trim(), publicMessage: publicMessage.trim(), internalNote: internalNote.trim(), durationMinutes: null, expiresAt: null, metadata: { restrictionId }, createdAt: now }, ...s.moderationActions],
+              users: s.users.map((u) => u.id === restriction.userId ? {
+                ...u,
+                status: remaining ? 'suspended' : 'active',
+                restrictionStatus: remaining ? (remaining.kind === 'ban' ? 'banned' : 'timeout') : 'active',
+              } : u),
+            };
+          });
+          notify(restriction.userId, 'moderation', { message: publicMessage.trim() || reason.trim() }, '/account/restrictions');
+          return ok;
+        },
+
+        submitAppeal: (actionId, statement) => {
+          const id = get().sessionUserId;
+          const action = get().moderationActions.find((a) => a.id === actionId);
+          if (!id || !statement.trim() || statement.trim().length > 3000) return fail('common.required');
+          if (!action || action.subjectId !== id || !['timeout', 'ban'].includes(action.actionType)) return fail('common.error');
+          const restrictionId = action.metadata.restrictionId;
+          const restriction = get().restrictions.find((r) => r.id === restrictionId);
+          if (!restriction || !restriction.active || restriction.reversedAt
+            || new Date(restriction.startsAt).getTime() > Date.now()
+            || (restriction.expiresAt && new Date(restriction.expiresAt).getTime() <= Date.now())) return fail('common.error');
+          if (get().appeals.some((a) => a.actionId === actionId && a.appellantId === id && a.status !== 'denied')) return fail('common.error');
+          set((s) => ({ appeals: [{ id: uid(), actionId, appellantId: id, statement: statement.trim(), status: 'open', reviewedBy: null, reviewNote: null, publicMessage: null, internalNote: null, createdAt: nowIso(), reviewedAt: null }, ...s.appeals] }));
+          return ok;
+        },
+
+        reviewAppeal: (appealId, decision, note, publicMessage = '', internalNote = '') => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const appeal = get().appeals.find((a) => a.id === appealId);
+          const action = get().moderationActions.find((a) => a.id === appeal?.actionId);
+          if (!me || !canStaff(me, 'decide_appeals') || !appeal || !action
+            || !['timeout', 'ban'].includes(action.actionType)
+            || appeal.status === 'granted' || appeal.status === 'denied') return fail('common.error');
+          if (decision !== 'under_review' && !note.trim()) return fail('common.required');
+          const now = nowIso();
+          const restrictionId = typeof action.metadata.restrictionId === 'string' ? action.metadata.restrictionId : null;
+          const restriction = restrictionId ? get().restrictions.find((r) => r.id === restrictionId) : null;
+          if (decision === 'granted' && (!restriction || !restriction.active || restriction.reversedAt
+            || restriction.createdBy === me.id || action.actorId === me.id || appeal.appellantId === me.id)) return fail('common.error');
+          set((s) => {
+            const grantActions: ModerationAction[] = [];
+            if (decision === 'granted' && restriction) {
+              grantActions.push({
+                id: uid(), actorId: me.id, subjectId: restriction.userId,
+                actionType: restriction.kind === 'ban' ? 'reverse_ban' : 'unban',
+                targetType: 'user', targetId: restriction.userId, reason: note.trim(),
+                publicMessage: publicMessage.trim(), internalNote: internalNote.trim(),
+                durationMinutes: null, expiresAt: null, metadata: { restrictionId }, createdAt: now,
+              });
+            }
+            const remaining = restriction
+              ? s.restrictions.find((r) => r.id !== restriction.id && r.userId === restriction.userId && r.active && !r.reversedAt && r.kind !== 'warning' && (!r.expiresAt || new Date(r.expiresAt).getTime() > Date.now()))
+              : null;
+            return {
+              appeals: s.appeals.map((a) => a.id === appealId ? { ...a, status: decision, reviewedBy: me.id, reviewNote: note.trim(), publicMessage: publicMessage.trim(), internalNote: internalNote.trim(), reviewedAt: decision === 'under_review' ? null : now } : a),
+              restrictions: decision === 'granted' && restrictionId
+                ? s.restrictions.map((r) => r.id === restrictionId ? { ...r, active: false, reversedAt: now, reversedBy: me.id } : r)
+                : s.restrictions,
+              users: decision === 'granted' && restriction
+                ? s.users.map((u) => u.id === restriction.userId ? { ...u, status: remaining ? 'suspended' : 'active', restrictionStatus: remaining ? (remaining.kind === 'ban' ? 'banned' : 'timeout') : 'active' } : u)
+                : s.users,
+              moderationActions: [...grantActions, ...s.moderationActions],
+            };
+          });
+          notify(appeal.appellantId, 'appeal_update', { status: translate(get().users.find((u) => u.id === appeal.appellantId)?.language ?? 'fr', `admin.status.${decision}`) }, '/appeals');
+          return ok;
         },
 
         toggleSavedDriver: (driverId) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          const me = get().users.find((u) => u.id === id);
+          const driver = get().users.find((u) => u.id === driverId);
+          if (!id || !me || me.status !== 'active' || !driver || driver.mode !== 'driver' || driver.id === id) return fail('common.error');
           set((s) => {
             const exists = s.savedDrivers.some((d) => d.userId === id && d.driverId === driverId);
             return {
@@ -623,52 +902,82 @@ export const useStore = create<AppState>()(
                 : [...s.savedDrivers, { userId: id, driverId, createdAt: nowIso() }],
             };
           });
+          return ok;
         },
 
         addTrustedContact: (name, phone) => {
           const id = get().sessionUserId;
-          if (!id) return fail('common.error');
-          if (!name.trim()) return fail('common.required');
-          set((s) => ({ trustedContacts: [...s.trustedContacts, { id: uid(), userId: id, name: name.trim(), phone }] }));
+          const me = get().users.find((u) => u.id === id);
+          if (!id || !me || me.status !== 'active') return fail('common.error');
+          if (!name.trim() || !phone.trim()) return fail('common.required');
+          set((s) => ({ trustedContacts: [...s.trustedContacts, { id: uid(), userId: id, name: name.trim(), phone: phone.trim() }] }));
           return ok;
         },
 
         removeTrustedContact: (id) => {
+          const userId = get().sessionUserId;
+          if (!userId || !get().trustedContacts.some((c) => c.id === id && c.userId === userId)) return fail('common.error');
           set((s) => ({ trustedContacts: s.trustedContacts.filter((c) => c.id !== id) }));
+          return ok;
         },
 
         addRecentSearch: (q) => {
           const id = get().sessionUserId;
-          if (!id) return;
+          const me = get().users.find((u) => u.id === id);
+          if (!id || !me || me.status !== 'active') return fail('common.error');
           set((s) => ({
             recentSearches: [
               { ...q, id: uid(), userId: id, createdAt: nowIso() },
               ...s.recentSearches.filter((r) => !(r.userId === id && r.fromCityId === q.fromCityId && r.toCityId === q.toCityId && r.date === q.date)),
             ].slice(0, 30),
           }));
+          return ok;
         },
 
         markNotificationRead: (id) => {
-          set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) }));
+          const userId = get().sessionUserId;
+          if (!userId || !get().notifications.some((n) => n.id === id && n.userId === userId)) return fail('common.error');
+          set((s) => ({ notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }));
+          return ok;
         },
 
         markAllNotificationsRead: () => {
           const id = get().sessionUserId;
+          if (!id) return fail('common.error');
           set((s) => ({ notifications: s.notifications.map((n) => (n.userId === id ? { ...n, read: true } : n)) }));
+          return ok;
         },
 
         suspendUser: (userId, suspend) => {
-          set((s) => ({ users: s.users.map((u) => (u.id === userId ? { ...u, status: suspend ? 'suspended' : 'active' } : u)) }));
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          const target = get().users.find((u) => u.id === userId);
+          if (!me || !target || target.id === me.id || !canStaff(me, 'reverse_restriction')) return fail('common.error');
+          if (suspend) {
+            const activeBan = get().restrictions.some((r) => r.userId === userId && r.kind === 'ban' && r.active && !r.reversedAt && (!r.expiresAt || new Date(r.expiresAt).getTime() > Date.now()));
+            if (activeBan) return fail('common.error');
+            return get().applyModeration({
+              userId, kind: 'ban', reason: 'Account suspended by an administrator.',
+              publicMessage: 'Your account has been suspended.', internalNote: 'Legacy suspension action.',
+            });
+          }
+          const restriction = get().restrictions.find((r) => r.userId === userId && r.kind === 'ban' && r.active && !r.reversedAt && (!r.expiresAt || new Date(r.expiresAt).getTime() > Date.now()));
+          if (!restriction) return fail('common.error');
+          return get().reverseRestriction(restriction.id, 'Account suspension reversed by an administrator.', 'Your account access has been restored.', 'Legacy suspension reversal.');
         },
 
         addCity: (p) => {
-          if (!p.nameFr.trim()) return fail('common.required');
-          const city: City = { ...p, id: uid() };
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          if (!me || !canStaff(me, 'manage_cities')) return fail('common.error');
+          if (!p.nameFr.trim() || !p.nameAr.trim() || !Number.isInteger(p.code) || p.code < 1 || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) return fail('common.required');
+          if (get().cities.some((c) => c.code === p.code || c.nameFr.toLocaleLowerCase() === p.nameFr.trim().toLocaleLowerCase())) return fail('common.error');
+          const city: City = { ...p, id: uid(), nameFr: p.nameFr.trim(), nameAr: p.nameAr.trim() };
           set((s) => ({ cities: [...s.cities, city] }));
           return ok;
         },
 
         sendAnnouncement: (title, body) => {
+          const me = get().users.find((u) => u.id === get().sessionUserId);
+          if (!me || !canStaff(me, 'send_announcements')) return fail('common.error');
           if (!title.trim() || !body.trim()) return fail('common.required');
           const announcement = { id: uid(), title: title.trim(), body: body.trim(), createdAt: nowIso() };
           set((s) => ({ announcements: [announcement, ...s.announcements] }));
@@ -678,13 +987,16 @@ export const useStore = create<AppState>()(
           return ok;
         },
       };
-    },
-    {
-      name: 'waslni-store-v1',
-      version: 1,
-    },
-  ),
-);
+};
+
+export const useDemoStore = runtimeMode === 'demo'
+  ? create<AppState>()(persist(demoStateCreator, {
+      name: 'waslni-demo-store-v2',
+      version: 2,
+    }))
+  : create<AppState>()(demoStateCreator);
+
+export const useStore = (runtimeMode === 'demo' ? useDemoStore : useCloudStore) as typeof useDemoStore;
 
 export function currentUser(s: AppState): User | null {
   return s.users.find((u) => u.id === s.sessionUserId) ?? null;
